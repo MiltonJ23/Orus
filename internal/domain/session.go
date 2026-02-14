@@ -19,7 +19,7 @@ func (r *ReadingSession) CalculateCompletion() float64 {
 	if r.TotalPages == 0 {
 		return 0
 	}
-	progress := (float64(r.CurrentPage) / float64(r.TotalPages)) / 100
+	progress := (float64(r.CurrentPage) / float64(r.TotalPages)) * 100
 	return math.Round(progress*100) / 100
 }
 
@@ -30,7 +30,7 @@ func (r *ReadingSession) IsBookComplete() bool {
 
 // UpdatePosition moves the reader to a new page
 func (r *ReadingSession) UpdatePosition(page int) {
-	if r.CurrentPage < 1 {
+	if page < 1 {
 		r.CurrentPage = 1
 		return
 	}
