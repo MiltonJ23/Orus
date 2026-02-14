@@ -34,3 +34,6 @@ fmt:
 test-with-coverage:
 	@go test -coverprofile=coverage.out ./...
 
+
+consult-coverage:
+	@go tool cover -func=coverage.out
