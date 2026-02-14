@@ -41,10 +41,10 @@ type Book struct {
 // NewBook is a factory method to create a new book, it validates the input data and returns an error if the data is invalid
 func NewBook(title, author, filePath string, format BookFormat, totalPages int) (*Book, error) {
 	if title == "" {
-		return nil, ErrInvalidBookData
+		return nil, ErrInvalidBookTitle
 	}
 	if filePath == "" {
-		return nil, ErrInvalidBookData
+		return nil, ErrBookNotFound
 	}
 	return &Book{
 		ID:         uuid.New().String(),
