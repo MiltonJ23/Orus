@@ -30,3 +30,7 @@ test:
 fmt:
 	@go fmt ./...
 
+
+test-with-coverage:
+	@go test -coverprofile=coverage.out ./...
+
