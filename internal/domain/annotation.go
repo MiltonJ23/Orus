@@ -1,12 +1,20 @@
 package domain
 
-import "time"
+import (
+	"errors"
+	"time"
+)
 
 type AnnotationType string
 
 const (
 	AnnotationBookmark  AnnotationType = "bookmark"
 	AnnotationHighlight AnnotationType = "highlight"
+)
+
+var (
+	ErrInvalidPageNumber = errors.New("invalid annotation page number")
+	ErrInvalidBookId     = errors.New("invalid book id")
 )
 
 // Annotation represents a user interaction with a specific part of the book
@@ -19,12 +27,20 @@ type Annotation struct {
 }
 
 // NewBookMark create a new bookmark for a specific page
-func NewBookMark(bookID string, pageNo int) *Annotation {
+func NewBookMark(bookID string, format AnnotationType, pageNo int) (*Annotation, error) {
+	if pageNo < 1 { // we check if the method receives an invalid page number , we reject the creation of the bookmark
+		return nil, ErrInvalidPageNumber
+	}
+	// now let's check if the bookID is not empty
+	if bookID == "" {
+		return nil, ErrInvalidBookId
+	}
+
 	return &Annotation{
 		ID:        "note-" + time.Now().Format("20060102150405"),
 		BookID:    bookID,
-		Type:      AnnotationBookmark,
+		Type:      format,
 		PageNo:    pageNo,
 		CreatedAt: time.Now(),
-	}
+	}, nil
 }
