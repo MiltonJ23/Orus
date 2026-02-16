@@ -6,7 +6,7 @@ Orus adheres to a strong software engineering methodology philosophy. We value c
 
 ## 1. The Engineering Philosophy
 
-* **Clean Architecture Strictness:** We do not mix layers. Domain logic never imports `gioui.org` packages. UI code never speaks directly to the database.
+* **Clean Architecture Strictness:** We do not mix layers. 
 * **Docs-as-Code:** If you change a feature, you must update the documentation in `docs/` in the same Pull Request.
 * **Visual Fidelity:** All UI changes must adhere to the Design System (see `docs/design/visual_language.md`).
 
