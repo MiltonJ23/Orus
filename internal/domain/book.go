@@ -10,10 +10,8 @@ import (
 // First of all, let's create the custom errors that might be raised here
 
 var (
-	ErrBookNotFound      = errors.New("book not found")
-	ErrBookAlreadyExists = errors.New("book already exists")
-	ErrInvalidBookData   = errors.New("invalid book data")
-	ErrInvalidBookTitle  = errors.New("invalid book title")
+	ErrBookNotFound     = errors.New("book not found")
+	ErrInvalidBookTitle = errors.New("invalid book title")
 )
 
 type BookFormat string
