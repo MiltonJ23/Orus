@@ -37,12 +37,12 @@ func createTables(db *sql.DB) error {
 	);
 	
 	CREATE TABLE IF NOT EXISTS sessions (
-		book_id TEXT PRIMARY KEY,
-		current_page INTEGER,
-		total_pages INTEGER,
-		last_read_time DATETIME,
-		FOREIGN KEY(book_id) REFERENCES books(id)
-	);`
+    session_id INTEGER PRIMARY KEY AUTOINCREMENT, -- Unique ID for every entry
+    book_id TEXT NOT NULL,                         -- Links to the book
+    current_page INTEGER DEFAULT 0,
+    last_read_time DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY(book_id) REFERENCES books(id) ON DELETE CASCADE
+);`
 
 	_, queryExecutionError := db.Exec(query)
 	return queryExecutionError
