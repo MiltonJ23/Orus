@@ -16,6 +16,9 @@ func (s *Storage) SaveSession(ctx context.Context, session *domain.ReadingSessio
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 
+	if session.SessionID == "" {
+		return fmt.Errorf("session id is required for saving the session")
+	}
 	// now let's build the query supposed to store a session
 	query := `INSERT INTO sessions (session_id,book_id,current_page,last_read_time) VALUES (?,?,?,?)`
 
@@ -48,5 +51,11 @@ func (s *Storage) GetSessionByID(ctx context.Context, bookID string) (*domain.Re
 			return nil, fmt.Errorf("unable to unload session from rows pointer, an error occured : %v", scanningError)
 		}
 	}
+
+	streamIterationError := rows.Err()
+	if streamIterationError != nil {
+		return nil, fmt.Errorf("an error occured while iterating annotations row: %v", streamIterationError)
+	}
+
 	return &ses, nil
 }
