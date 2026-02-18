@@ -35,8 +35,8 @@ func TestBookMarkType(t *testing.T) {
 		t.Fatalf("expected no errors, got %v", bookmarkCreationError)
 	}
 
-	if bookmark.Type != "bookmark" {
-		t.Fatalf("bookmark.Type should  be 'bookmark', instead got %v", bookmark.Type)
+	if bookmark.AnnotationType != "bookmark" {
+		t.Fatalf("bookmark.Type should  be 'bookmark', instead got %v", bookmark.AnnotationType)
 	}
 	// now let's cover for the other type of bookmark
 	bookmark2, bookmarkCreationError2 := domain.NewBookMark("kln934nalj4fs", domain.AnnotationHighlight, 30)
@@ -44,7 +44,7 @@ func TestBookMarkType(t *testing.T) {
 		t.Fatalf("expected no errors, got %v", bookmarkCreationError2)
 	}
 
-	if bookmark2.Type != "highlight" {
-		t.Fatalf("bookmark.Type should be 'hightlight', instead got %v", bookmark2.Type)
+	if bookmark2.AnnotationType != "highlight" {
+		t.Fatalf("bookmark.Type should be 'hightlight', instead got %v", bookmark2.AnnotationType)
 	}
 }

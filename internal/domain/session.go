@@ -3,15 +3,35 @@ package domain
 import (
 	"math"
 	"time"
+
+	"github.com/google/uuid"
 )
 
 // ReadingSession tracks the user interaction with a book
 type ReadingSession struct {
-	BookID           string    `json:"book_id"`
-	TotalPages       int       `json:"total_pages"`
-	CurrentPage      int       `json:"current_page"`
-	StartReadingTime time.Time `json:"start_reading_time"`
-	LastReadingTime  time.Time `json:"last_reading_time"`
+	SessionID       string
+	BookID          string    `json:"book_id"`
+	TotalPages      int       `json:"total_pages"`
+	CurrentPage     int       `json:"current_page"`
+	LastReadingTime time.Time `json:"last_reading_time"`
+}
+
+func NewSession(bookId string, totalPages, currentPages int, lastReadingTime time.Time) (*ReadingSession, error) {
+	// we first of all check if the bookId is not empty
+	if bookId == "" {
+		return nil, ErrInvalidBookTitle
+	}
+	if currentPages < 1 || totalPages < 1 {
+		return nil, ErrInvalidPageNumber
+	}
+	var r ReadingSession
+	r.SessionID = uuid.New().String()
+	r.BookID = bookId
+	r.TotalPages = totalPages
+	r.CurrentPage = currentPages
+	r.LastReadingTime = lastReadingTime
+
+	return &r, nil
 }
 
 // CalculateCompletion calculate the rate of completion in percentage (0.0 % to 100 % )

@@ -19,11 +19,11 @@ var (
 
 // Annotation represents a user interaction with a specific part of the book
 type Annotation struct {
-	ID        string         `json:"id"`
-	BookID    string         `json:"book_id"`
-	Type      AnnotationType `json:"type"`
-	PageNo    int            `json:"page_no"`
-	CreatedAt time.Time      `json:"created_at"`
+	ID             string         `json:"id"`
+	BookID         string         `json:"book_id"`
+	AnnotationType AnnotationType `json:"type"`
+	PageNo         int            `json:"page_no"`
+	CreatedAt      time.Time      `json:"created_at"`
 }
 
 // NewBookMark create a new bookmark for a specific page
@@ -37,10 +37,10 @@ func NewBookMark(bookID string, format AnnotationType, pageNo int) (*Annotation,
 	}
 
 	return &Annotation{
-		ID:        "note-" + time.Now().Format("20060102150405"),
-		BookID:    bookID,
-		Type:      format,
-		PageNo:    pageNo,
-		CreatedAt: time.Now(),
+		ID:             "note-" + time.Now().Format("20060102150405"),
+		BookID:         bookID,
+		AnnotationType: format,
+		PageNo:         pageNo,
+		CreatedAt:      time.Now(),
 	}, nil
 }
