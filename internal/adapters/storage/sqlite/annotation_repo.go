@@ -27,7 +27,7 @@ func (s *Storage) SaveAnnotation(ctx context.Context, annotation *domain.Annotat
 }
 
 // GetAnnotationByPage will retrieve the annotations for the given page of a book
-func (s *Storage) GetAnnotationByPage(ctx context.Context, pageNo int, book_id string) ([]*domain.Annotation, error) {
+func (s *Storage) GetAnnotationByPage(ctx context.Context, pageNo int, bookId string) ([]*domain.Annotation, error) {
 	// we manage the context lifecycle
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
@@ -35,7 +35,7 @@ func (s *Storage) GetAnnotationByPage(ctx context.Context, pageNo int, book_id s
 	// let's build the query
 	query := `SELECT * FROM annotations WHERE page_number = ? AND book_id=? ORDER BY page_number ASC;`
 
-	rows, fetchingError := s.db.QueryContext(ctx, query, pageNo, book_id)
+	rows, fetchingError := s.db.QueryContext(ctx, query, pageNo, bookId)
 	if fetchingError != nil {
 		return nil, fmt.Errorf("an error occured while querying annotations table: %v", fetchingError)
 	}
@@ -47,7 +47,7 @@ func (s *Storage) GetAnnotationByPage(ctx context.Context, pageNo int, book_id s
 		var annot domain.Annotation
 		var formatStr string
 
-		scanningError := rows.Scan(&annot.ID, &annot.BookID, formatStr, &annot.PageNo, &annot.CreatedAt)
+		scanningError := rows.Scan(&annot.ID, &annot.BookID, &formatStr, &annot.PageNo, &annot.CreatedAt)
 		if scanningError != nil {
 			return nil, fmt.Errorf("an error occured while scanning annotations table: %v", scanningError)
 		}
@@ -80,7 +80,7 @@ func (s *Storage) GetAnnotationByType(ctx context.Context, annotationType string
 		var annot domain.Annotation
 		var formatStr string
 
-		scanningError := rows.Scan(&annot.ID, &annot.BookID, formatStr, &annot.PageNo, &annot.CreatedAt)
+		scanningError := rows.Scan(&annot.ID, &annot.BookID, &formatStr, &annot.PageNo, &annot.CreatedAt)
 		if scanningError != nil {
 			return nil, fmt.Errorf("an error occured while scanning annotations table: %v", scanningError)
 		}
@@ -126,7 +126,7 @@ func (s *Storage) ListAllAnnotationOfABook(ctx context.Context, book_id string) 
 		var annot domain.Annotation
 		var formatStr string
 
-		scanningError := rows.Scan(&annot.ID, &annot.BookID, formatStr, &annot.PageNo, &annot.CreatedAt)
+		scanningError := rows.Scan(&annot.ID, &annot.BookID, &formatStr, &annot.PageNo, &annot.CreatedAt)
 		if scanningError != nil {
 			return nil, fmt.Errorf("an error occured while scanning annotations rows pointer: %v", scanningError)
 		}
