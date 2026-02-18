@@ -57,7 +57,7 @@ func (s *Storage) GetByID(ctx context.Context, id string) (*domain.Book, error) 
 
 func (s *Storage) ListAll(ctx context.Context) ([]*domain.Book, error) {
 	// first of all, we manage the context lifecycle
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 
 	var (
@@ -82,6 +82,10 @@ func (s *Storage) ListAll(ctx context.Context) ([]*domain.Book, error) {
 		}
 		b.Format = domain.BookFormat(formatStr)
 		bookList = append(bookList, &b)
+	}
+	streamIterationError := rows.Err()
+	if streamIterationError != nil {
+		return nil, fmt.Errorf("an error occured while iterating annotations row: %v", streamIterationError)
 	}
 
 	return bookList, nil
