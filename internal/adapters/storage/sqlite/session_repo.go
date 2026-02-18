@@ -38,6 +38,7 @@ func (s *Storage) GetSessionByID(ctx context.Context, bookID string) (*domain.Re
 	if fetchingError != nil {
 		return nil, fmt.Errorf("unable to retrieve session, an error occured : %v", fetchingError)
 	}
+	defer rows.Close()
 
 	// now let's exploit the stream
 	var ses domain.ReadingSession
