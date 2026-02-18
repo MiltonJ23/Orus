@@ -43,7 +43,7 @@ func (s *Storage) GetByID(ctx context.Context, id string) (*domain.Book, error) 
 		formatStr string
 	)
 
-	copyingDataFromRowError := row.Scan(&b.ID, &b.Title, &b.FilePath, formatStr, &b.TotalPages, &b.AddedAt)
+	copyingDataFromRowError := row.Scan(&b.ID, &b.Title, &b.Author, &b.FilePath, &formatStr, &b.TotalPages, &b.AddedAt)
 	if copyingDataFromRowError != nil {
 		// maybe because the row was empty
 		if errors.Is(copyingDataFromRowError, sql.ErrNoRows) {
@@ -76,7 +76,7 @@ func (s *Storage) ListAll(ctx context.Context) ([]*domain.Book, error) {
 		// we create a new book instance to store the data of the current row
 		var b domain.Book
 		var formatStr string
-		scanningRowError := rows.Scan(&b.ID, &b.Title, &b.FilePath, formatStr, &b.TotalPages, &b.AddedAt)
+		scanningRowError := rows.Scan(&b.ID, &b.Title, &b.Author, &b.FilePath, &formatStr, &b.TotalPages, &b.AddedAt)
 		if scanningRowError != nil {
 			return nil, fmt.Errorf("unable to scan the data from database row, %v", scanningRowError)
 		}
