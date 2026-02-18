@@ -42,7 +42,17 @@ func createTables(db *sql.DB) error {
     current_page INTEGER DEFAULT 0,
     last_read_time DATETIME DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY(book_id) REFERENCES books(id) ON DELETE CASCADE
-);`
+);
+
+	CREATE TABLE IF NOT EXISTS annotations (
+	    id TEXT PRIMARY KEY,
+	    book_id TEXT NOT NULL,
+	    annotation_type TEXT NOT NULl,
+	    current_page INTEGER DEFAULT 0,
+	    created_at DATETIME
+	    FOREIGN KEY(book_id) REFERENCES books(id) ON DELETE CASCADE
+	)
+`
 
 	_, queryExecutionError := db.Exec(query)
 	return queryExecutionError
