@@ -22,8 +22,8 @@ type SessionRepository interface {
 
 type AnnotationRepository interface {
 	SaveAnnotation(ctx context.Context, annotation *domain.Annotation) error
-	GetAnnotationByPage(ctx context.Context, pageNo int) ([]*domain.Annotation, error)
+	GetAnnotationByPage(ctx context.Context, pageNo int, book_id string) ([]*domain.Annotation, error)
 	GetAnnotationByType(ctx context.Context, annotationType string) ([]*domain.Annotation, error)
 	DeleteAnnotation(ctx context.Context, id string) error
-	ListAllAnnotation(ctx context.Context) ([]*domain.Annotation, error)
+	ListAllAnnotationOfABook(ctx context.Context, book_id string) ([]*domain.Annotation, error)
 }
