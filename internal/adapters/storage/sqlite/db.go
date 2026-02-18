@@ -48,7 +48,7 @@ func createTables(db *sql.DB) error {
 	    id TEXT PRIMARY KEY,
 	    book_id TEXT NOT NULL,
 	    annotation_type TEXT NOT NULl,
-	    current_page INTEGER DEFAULT 0,
+	    page_number INTEGER DEFAULT 0,
 	    created_at DATETIME
 	    FOREIGN KEY(book_id) REFERENCES books(id) ON DELETE CASCADE
 	)
