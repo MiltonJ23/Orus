@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	_ "modernc.org/sqlite"
 )
 
 type Storage struct {
@@ -21,6 +22,10 @@ func NewStorage(dbPath string) (*Storage, error) {
 	}
 
 	// if the tables do not already exist, let's create them
+	creatingTablesError := createTables(db)
+	if creatingTablesError != nil {
+		return nil, fmt.Errorf("failed to create tables in sqlite database: %s", creatingTablesError.Error())
+	}
 
 	return &Storage{db: db}, nil
 }
