@@ -17,7 +17,7 @@ func NewStorage(dbPath string) (*Storage, error) {
 		return nil, errors.New("dbPath cannot be empty")
 	}
 
-	db, dbReadingError := sql.Open("sqlite", dbPath)
+	db, dbReadingError := sql.Open("sqlite", "file:"+dbPath+"?_pragma=foreign_keys(1)")
 	if dbReadingError != nil {
 		return nil, fmt.Errorf("failed to connect to sqlite database: %s", dbReadingError.Error())
 	}
@@ -68,4 +68,12 @@ func createTables(db *sql.DB) error {
 
 	_, queryExecutionError := db.Exec(query)
 	return queryExecutionError
+}
+
+func (s *Storage) Close() error {
+
+	if s == nil || s.db == nil {
+		return nil
+	}
+	return s.db.Close()
 }
