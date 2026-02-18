@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+
 	_ "modernc.org/sqlite"
 )
 
@@ -16,14 +17,20 @@ func NewStorage(dbPath string) (*Storage, error) {
 		return nil, errors.New("dbPath cannot be empty")
 	}
 
-	db, dbReadingError := sql.Open("sqlite3", dbPath)
+	db, dbReadingError := sql.Open("sqlite", dbPath)
 	if dbReadingError != nil {
 		return nil, fmt.Errorf("failed to connect to sqlite database: %s", dbReadingError.Error())
+	}
+
+	if _, err := db.Exec("PRAGMA foreign_keys = ON;"); err != nil {
+		db.Close()
+		return nil, fmt.Errorf("failed to enable foreign keys: %w", err)
 	}
 
 	// if the tables do not already exist, let's create them
 	creatingTablesError := createTables(db)
 	if creatingTablesError != nil {
+		db.Close()
 		return nil, fmt.Errorf("failed to create tables in sqlite database: %s", creatingTablesError.Error())
 	}
 
@@ -42,7 +49,7 @@ func createTables(db *sql.DB) error {
 	);
 	
 	CREATE TABLE IF NOT EXISTS sessions (
-    session_id INTEGER PRIMARY KEY AUTOINCREMENT, -- Unique ID for every entry
+    session_id TEXT PRIMARY KEY, -- Unique ID for every entry
     book_id TEXT NOT NULL,                         -- Links to the book
     current_page INTEGER DEFAULT 0,
     last_read_time DATETIME DEFAULT CURRENT_TIMESTAMP,
@@ -54,7 +61,7 @@ func createTables(db *sql.DB) error {
 	    book_id TEXT NOT NULL,
 	    annotation_type TEXT NOT NULl,
 	    page_number INTEGER DEFAULT 0,
-	    created_at DATETIME
+	    created_at DATETIME,
 	    FOREIGN KEY(book_id) REFERENCES books(id) ON DELETE CASCADE
 	)
 `
