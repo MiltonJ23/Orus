@@ -54,7 +54,10 @@ func (s *Storage) GetAnnotationByPage(ctx context.Context, pageNo int, bookId st
 		annot.AnnotationType = domain.AnnotationType(formatStr)
 		annotations = append(annotations, &annot)
 	}
-	// meaning all went well
+	streamIterationError := rows.Err()
+	if streamIterationError != nil {
+		return nil, fmt.Errorf("an error occured while iterating annotations row: %v", streamIterationError)
+	}
 
 	return annotations, nil
 }
@@ -78,14 +81,20 @@ func (s *Storage) GetAnnotationByType(ctx context.Context, annotationType string
 
 	for rows.Next() {
 		var annot domain.Annotation
+
 		var formatStr string
 
 		scanningError := rows.Scan(&annot.ID, &annot.BookID, &formatStr, &annot.PageNo, &annot.CreatedAt)
 		if scanningError != nil {
+
 			return nil, fmt.Errorf("an error occured while scanning annotations table: %v", scanningError)
 		}
 		annot.AnnotationType = domain.AnnotationType(formatStr)
 		annotations = append(annotations, &annot)
+	}
+	streamIterationError := rows.Err()
+	if streamIterationError != nil {
+		return nil, fmt.Errorf("an error occured while iterating annotations row: %v", streamIterationError)
 	}
 	return annotations, nil
 }
@@ -133,6 +142,11 @@ func (s *Storage) ListAllAnnotationOfABook(ctx context.Context, book_id string) 
 		annot.AnnotationType = domain.AnnotationType(formatStr)
 		annotations = append(annotations, &annot)
 	}
+	streamIterationError := rows.Err()
+	if streamIterationError != nil {
+		return nil, fmt.Errorf("an error occured while iterating annotations row: %v", streamIterationError)
+	}
+
 	return annotations, nil
 
 }
