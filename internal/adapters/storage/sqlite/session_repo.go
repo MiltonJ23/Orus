@@ -81,5 +81,12 @@ func (s *Storage) GetLastReadingSession(ctx context.Context, bookId string) (*do
 			return nil, fmt.Errorf("an error occured when scanning the session rows pointer,%v", scanningRowError)
 		}
 	}
+	defer rows.Close()
+
+	streamIterationError := rows.Err()
+	if streamIterationError != nil {
+		return nil, fmt.Errorf("an error occured while iterating annotations row: %v", streamIterationError)
+	}
+
 	return &session, nil
 }
