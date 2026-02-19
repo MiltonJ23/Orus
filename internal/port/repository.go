@@ -17,7 +17,8 @@ type BookRepository interface {
 // SessionRepository defines the contract to implement for persistence operations related to Reading Sessions.
 type SessionRepository interface {
 	SaveSession(ctx context.Context, session *domain.ReadingSession) error
-	GetSessionByID(ctx context.Context, bookID string) (*domain.ReadingSession, error)
+	GetSessionByID(ctx context.Context, bookID string) ([]*domain.ReadingSession, error)
+	GetLastReadingSession(ctx context.Context, book_id string) (*domain.ReadingSession, error)
 }
 
 type AnnotationRepository interface {
