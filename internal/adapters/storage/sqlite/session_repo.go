@@ -62,7 +62,7 @@ func (s *Storage) GetSessionByID(ctx context.Context, bookID string) ([]*domain.
 	return sessions, nil
 }
 
-func (s *Storage) GetLastReadingSession(ctx context.Context, book_id string) (*domain.ReadingSession, error) {
+func (s *Storage) GetLastReadingSession(ctx context.Context, bookId string) (*domain.ReadingSession, error) {
 	// we manage the context lifecycle
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
@@ -70,7 +70,7 @@ func (s *Storage) GetLastReadingSession(ctx context.Context, book_id string) (*d
 	// we build the query
 	query := `SELECT * FROM sessions WHERE book_id = ? ORDER BY last_read_time DESC LIMIT 1`
 
-	rows, fetchingError := s.db.QueryContext(ctx, query, book_id)
+	rows, fetchingError := s.db.QueryContext(ctx, query, bookId)
 	if fetchingError != nil {
 		return nil, fmt.Errorf("unable to fetch last reading, an error occured : %v", fetchingError)
 	}
