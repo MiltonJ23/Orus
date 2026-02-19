@@ -1,6 +1,7 @@
 package domain
 
 import (
+	"errors"
 	"math"
 	"time"
 
@@ -21,8 +22,8 @@ func NewSession(bookId string, totalPages, currentPages int, lastReadingTime tim
 	if bookId == "" {
 		return nil, ErrInvalidBookTitle
 	}
-	if currentPages < 1 || totalPages < 1 {
-		return nil, ErrInvalidPageNumber
+	if currentPages < 1 {
+		return nil, errors.New("invalid session page number")
 	}
 	var r ReadingSession
 	r.SessionID = uuid.New().String()
