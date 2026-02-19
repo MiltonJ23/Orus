@@ -62,6 +62,6 @@ type BookMetadata struct {
 	Title      string
 	Author     string
 	TotalPages int
-	filePath   string
-	format     BookFormat
+	FilePath   string
+	Format     BookFormat
 }
