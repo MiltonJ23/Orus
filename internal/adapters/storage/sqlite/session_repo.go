@@ -46,12 +46,12 @@ func (s *Storage) GetSessionByID(ctx context.Context, bookID string) ([]*domain.
 	// now let's exploit the stream
 	var sessions []*domain.ReadingSession
 	for rows.Next() {
-		var ses domain.ReadingSession
+		ses := &domain.ReadingSession{}
 		scanningError := rows.Scan(&ses.SessionID, &ses.BookID, &ses.CurrentPage, &ses.LastReadingTime)
 		if scanningError != nil {
 			return nil, fmt.Errorf("unable to unload session from rows pointer, an error occured : %v", scanningError)
 		}
-		sessions = append(sessions, &ses)
+		sessions = append(sessions, ses)
 	}
 
 	streamIterationError := rows.Err()
