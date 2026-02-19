@@ -29,7 +29,7 @@ func (s *Storage) SaveSession(ctx context.Context, session *domain.ReadingSessio
 	return nil
 }
 
-func (s *Storage) GetSessionByID(ctx context.Context, bookID string) (*domain.ReadingSession, error) {
+func (s *Storage) GetSessionByID(ctx context.Context, bookID string) ([]*domain.ReadingSession, error) {
 	// let's manage the context lifecycle
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
@@ -44,12 +44,14 @@ func (s *Storage) GetSessionByID(ctx context.Context, bookID string) (*domain.Re
 	defer rows.Close()
 
 	// now let's exploit the stream
-	var ses domain.ReadingSession
+	var sessions []*domain.ReadingSession
 	for rows.Next() {
+		var ses domain.ReadingSession
 		scanningError := rows.Scan(&ses.SessionID, &ses.BookID, &ses.CurrentPage, &ses.LastReadingTime)
 		if scanningError != nil {
 			return nil, fmt.Errorf("unable to unload session from rows pointer, an error occured : %v", scanningError)
 		}
+		sessions = append(sessions, &ses)
 	}
 
 	streamIterationError := rows.Err()
@@ -57,5 +59,27 @@ func (s *Storage) GetSessionByID(ctx context.Context, bookID string) (*domain.Re
 		return nil, fmt.Errorf("an error occured while iterating annotations row: %v", streamIterationError)
 	}
 
-	return &ses, nil
+	return sessions, nil
+}
+
+func (s *Storage) GetLastReadingSession(ctx context.Context, bookId string) (*domain.ReadingSession, error) {
+	// we manage the context lifecycle
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+
+	// we build the query
+	query := `SELECT * FROM sessions WHERE book_id = ? ORDER BY last_read_time DESC LIMIT 1`
+
+	rows, fetchingError := s.db.QueryContext(ctx, query, bookId)
+	if fetchingError != nil {
+		return nil, fmt.Errorf("unable to fetch last reading, an error occured : %v", fetchingError)
+	}
+	var session domain.ReadingSession
+	if rows.Next() {
+		scanningRowError := rows.Scan(&session.SessionID, &session.BookID, &session.CurrentPage, &session.LastReadingTime)
+		if scanningRowError != nil {
+			return nil, fmt.Errorf("an error occured when scanning the session rows pointer,%v", scanningRowError)
+		}
+	}
+	return &session, nil
 }

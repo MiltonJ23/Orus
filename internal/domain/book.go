@@ -56,3 +56,12 @@ func NewBook(title, author, filePath string, format BookFormat, totalPages int) 
 		UpdatedAt:  time.Now(),
 	}, nil
 }
+
+// BookMetadata represent the metadata to be extracted from a file
+type BookMetadata struct {
+	Title      string
+	Author     string
+	TotalPages int
+	FilePath   string
+	Format     BookFormat
+}
