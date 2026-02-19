@@ -63,30 +63,25 @@ func (s *Storage) GetSessionByID(ctx context.Context, bookID string) ([]*domain.
 }
 
 func (s *Storage) GetLastReadingSession(ctx context.Context, bookId string) (*domain.ReadingSession, error) {
-	// we manage the context lifecycle
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 
-	// we build the query
-	query := `SELECT * FROM sessions WHERE book_id = ? ORDER BY last_read_time DESC LIMIT 1`
+	query := `SELECT session_id, book_id, current_page, last_read_time FROM sessions WHERE book_id = ? ORDER BY last_read_time DESC LIMIT 1`
 
 	rows, fetchingError := s.db.QueryContext(ctx, query, bookId)
 	if fetchingError != nil {
-		return nil, fmt.Errorf("unable to fetch last reading, an error occured : %v", fetchingError)
-	}
-	var session domain.ReadingSession
-	if rows.Next() {
-		scanningRowError := rows.Scan(&session.SessionID, &session.BookID, &session.CurrentPage, &session.LastReadingTime)
-		if scanningRowError != nil {
-			return nil, fmt.Errorf("an error occured when scanning the session rows pointer,%v", scanningRowError)
-		}
+		return nil, fmt.Errorf("unable to fetch last reading: %v", fetchingError)
 	}
 	defer rows.Close()
 
-	streamIterationError := rows.Err()
-	if streamIterationError != nil {
-		return nil, fmt.Errorf("an error occured while iterating annotations row: %v", streamIterationError)
+	if rows.Next() {
+		var session domain.ReadingSession
+		scanningRowError := rows.Scan(&session.SessionID, &session.BookID, &session.CurrentPage, &session.LastReadingTime)
+		if scanningRowError != nil {
+			return nil, fmt.Errorf("scan error: %v", scanningRowError)
+		}
+		return &session, nil
 	}
 
-	return &session, nil
+	return nil, nil
 }
