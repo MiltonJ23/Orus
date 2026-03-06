@@ -27,7 +27,6 @@ func NewStorage(dbPath string) (*Storage, error) {
 		return nil, fmt.Errorf("failed to enable foreign keys: %w", err)
 	}
 
-	// if the tables do not already exist, let's create them
 	creatingTablesError := createTables(db)
 	if creatingTablesError != nil {
 		db.Close()
@@ -38,7 +37,8 @@ func NewStorage(dbPath string) (*Storage, error) {
 }
 
 func createTables(db *sql.DB) error {
-	query := `CREATE TABLE IF NOT EXISTS books (
+	query := `
+	CREATE TABLE IF NOT EXISTS books (
 		id TEXT PRIMARY KEY,
 		title TEXT NOT NULL,
 		author TEXT,
@@ -47,31 +47,56 @@ func createTables(db *sql.DB) error {
 		total_pages INTEGER,
 		added_at DATETIME
 	);
-	
+
 	CREATE TABLE IF NOT EXISTS sessions (
-    session_id TEXT PRIMARY KEY, -- Unique ID for every entry
-    book_id TEXT NOT NULL,                         -- Links to the book
-    current_page INTEGER DEFAULT 0,
-    last_read_time DATETIME DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY(book_id) REFERENCES books(id) ON DELETE CASCADE
-);
+		session_id TEXT PRIMARY KEY,
+		book_id TEXT NOT NULL,
+		current_page INTEGER DEFAULT 0,
+		last_read_time DATETIME DEFAULT CURRENT_TIMESTAMP,
+		FOREIGN KEY(book_id) REFERENCES books(id) ON DELETE CASCADE
+	);
 
 	CREATE TABLE IF NOT EXISTS annotations (
-	    id TEXT PRIMARY KEY,
-	    book_id TEXT NOT NULL,
-	    annotation_type TEXT NOT NULl,
-	    page_number INTEGER DEFAULT 0,
-	    created_at DATETIME,
-	    FOREIGN KEY(book_id) REFERENCES books(id) ON DELETE CASCADE
-	)
-`
+		id TEXT PRIMARY KEY,
+		book_id TEXT NOT NULL,
+		annotation_type TEXT NOT NULL,
+		page_number INTEGER DEFAULT 0,
+		created_at DATETIME,
+		FOREIGN KEY(book_id) REFERENCES books(id) ON DELETE CASCADE
+	);
+
+	CREATE TABLE IF NOT EXISTS reading_sheets (
+		id TEXT PRIMARY KEY,
+		book_id TEXT NOT NULL,
+		book_title TEXT NOT NULL,
+		summary TEXT DEFAULT '',
+		quotes TEXT DEFAULT '',   -- citations séparées par "||"
+		rating INTEGER DEFAULT 0, -- 0 à 5
+		tags TEXT DEFAULT '',     -- tags séparés par ","
+		created_at DATETIME,
+		updated_at DATETIME,
+		FOREIGN KEY(book_id) REFERENCES books(id) ON DELETE CASCADE
+	);
+
+	CREATE TABLE IF NOT EXISTS reminders (
+		id TEXT PRIMARY KEY,
+		book_id TEXT DEFAULT '',     -- vide = rappel global
+		book_title TEXT DEFAULT '',
+		label TEXT NOT NULL,
+		hour INTEGER NOT NULL,       -- 0-23
+		minute INTEGER NOT NULL,     -- 0-59
+		frequency TEXT NOT NULL,     -- daily | weekly | weekdays | once
+		enabled INTEGER DEFAULT 1,   -- 0 ou 1 (booléen SQLite)
+		next_ring DATETIME,
+		created_at DATETIME
+	);
+	`
 
 	_, queryExecutionError := db.Exec(query)
 	return queryExecutionError
 }
 
 func (s *Storage) Close() error {
-
 	if s == nil || s.db == nil {
 		return nil
 	}

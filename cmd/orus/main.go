@@ -1,56 +1,59 @@
 package main
 
 import (
-	"context"
-	"fmt"
+	_ "fmt"
 	"log"
 	"os"
 	"path/filepath"
 
+	"gioui.org/app"
 	"github.com/MiltonJ23/Orus/internal/adapters/extractor"
+	notifier "github.com/MiltonJ23/Orus/internal/adapters/notifier"
 	"github.com/MiltonJ23/Orus/internal/adapters/storage/sqlite"
+	"github.com/MiltonJ23/Orus/internal/adapters/ui/views"
 	"github.com/MiltonJ23/Orus/internal/service"
 )
 
 func main() {
-	ctx := context.Background()
-
-	// 1. Initialize Infrastructure (Storage)
-	// We use a local SQLite file in the current directory for now
+	// 1. Infrastructure
 	dbPath := filepath.Join(".", "orus.db")
 	store, err := sqlite.NewStorage(dbPath)
 	if err != nil {
 		log.Fatalf("FATAL: failed to initialize storage: %v", err)
 	}
-	fmt.Println("[OK] Storage initialized")
+	defer store.Close()
 
 	fileExtractor := extractor.NewLocalFileExtractor()
-	fmt.Println("[OK] Extractors initialized")
+	logNotifier := notifier.NewLogNotifier()
 
-	// 3. Initialize Application Services (Injecting Adapters)
+	// 2. Services
 	libService := service.NewLibraryService(store, fileExtractor)
 	trackerService := service.NewTrackerService(store, store)
-	fmt.Println("[OK] Services bound")
+	sheetService := service.NewReadingSheetService(store, store)
+	reminderService := service.NewReminderService(store, logNotifier)
+	sharingService := service.NewSharingService(store, store)
 
-	// 4. Sanity Check: Run a dummy import if an argument is provided
-	if len(os.Args) > 1 {
-		filePath := os.Args[1]
-		fmt.Printf("Attempting to import: %s\n", filePath)
+	// 3. Planificateur de rappels (goroutine de fond)
+	go reminderService.StartScheduler()
+	defer reminderService.Stop()
 
-		book, err := libService.ImportBook(ctx, filePath)
-		if err != nil {
-			log.Fatalf("ERR: Import failed: %v", err)
+	// 4. UI
+	windowManager := views.NewWindowManager(
+		libService,
+		trackerService,
+		sheetService,
+		reminderService,
+		sharingService,
+	)
+
+	// 5. Boucle UI dans une goroutine
+	go func() {
+		if err := windowManager.Run(); err != nil {
+			log.Fatalf("UI Engine crashed: %v", err)
 		}
+		os.Exit(0)
+	}()
 
-		fmt.Printf("[SUCCESS] Imported '%s' (ID: %s) with %d pages.\n", book.Title, book.ID, book.TotalPages)
-
-		// Test tracker
-		session, err := trackerService.OpenBook(ctx, book.ID)
-		if err != nil {
-			log.Fatalf("ERR: Could not open book: %v", err)
-		}
-		fmt.Printf("[SUCCESS] Session started. Current Page: %d\n", session.CurrentPage)
-	} else {
-		fmt.Println("System ready. Run with a file path to test import: ./orus /path/to/book.pdf")
-	}
+	// 6. Thread principal OS (requis par Gio/macOS)
+	app.Main()
 }
