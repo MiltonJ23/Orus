@@ -1,0 +1,4 @@
+* partager un livre que tu as deja lu 
+* la possibilite de faire les fiches de lecture 
+* la possibilite de partager les notes de lecture 
+* la possibilite de configurer des reminders de lecture
