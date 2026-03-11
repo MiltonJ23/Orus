@@ -15,46 +15,74 @@ type TrackerService struct {
 }
 
 func NewTrackerService(repository port.BookRepository, session port.SessionRepository) *TrackerService {
-	return &TrackerService{
-		repo:    repository,
-		session: session,
-	}
+	return &TrackerService{repo: repository, session: session}
 }
 
 func (t *TrackerService) OpenBook(ctx context.Context, bookId string) (*domain.ReadingSession, error) {
-	// 1. Retrieve the book first to ensure it exists and get its TotalPages
-	book, retrievingBookError := t.repo.GetByID(ctx, bookId)
-	if retrievingBookError != nil {
-		return nil, fmt.Errorf("an error trying to retrieve the book for this session: %w", retrievingBookError)
+	book, err := t.repo.GetByID(ctx, bookId)
+	if err != nil {
+		return nil, fmt.Errorf("error retrieving book: %w", err)
 	}
-
-	// 2. Try to get the last reading session
-	session, retrievingSessionError := t.session.GetLastReadingSession(ctx, bookId)
-
-	// 3. Business Logic: Determine the starting page
-	currentPage := 1 // Default to page 1 for new books
-
-	if retrievingSessionError == nil && session != nil {
-		// If a session exists, resume from where they left off
+	session, sessErr := t.session.GetLastReadingSession(ctx, bookId)
+	currentPage := 1
+	if sessErr == nil && session != nil {
 		currentPage = session.CurrentPage
 	}
-
-	// 4. Create the session object
 	newSession, err := domain.NewSession(bookId, book.TotalPages, currentPage, time.Now())
 	if err != nil {
-		return nil, fmt.Errorf("failed to initialize session entity: %w", err)
+		return nil, fmt.Errorf("failed to init session: %w", err)
 	}
-
-	// 5. CRITICAL: Save the session so it's tracked in the database immediately
-	savingError := t.session.SaveSession(ctx, newSession)
-	if savingError != nil {
-		return nil, fmt.Errorf("failed to persist new reading session: %w", savingError)
+	if err := t.session.SaveSession(ctx, newSession); err != nil {
+		return nil, fmt.Errorf("failed to persist session: %w", err)
 	}
-
 	return newSession, nil
 }
 
 func (t *TrackerService) UpdateProgress(ctx context.Context, page int, ses *domain.ReadingSession) error {
 	ses.UpdatePosition(page)
 	return nil
+}
+
+// GetLastSession returns the most recent reading session for a book.
+func (t *TrackerService) GetLastSession(ctx context.Context, bookID string) (*domain.ReadingSession, error) {
+	return t.session.GetLastReadingSession(ctx, bookID)
+}
+
+// GetRecentSessions aggregates all sessions across all books.
+func (t *TrackerService) GetRecentSessions(ctx context.Context) ([]*domain.ReadingSession, error) {
+	books, err := t.repo.ListAll(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list books: %w", err)
+	}
+	var result []*domain.ReadingSession
+	for _, b := range books {
+		sessions, err := t.session.GetSessionByID(ctx, b.ID)
+		if err != nil {
+			continue
+		}
+		result = append(result, sessions...)
+	}
+	return result, nil
+}
+
+// GetMostRecentBook returns the book with the most recent reading activity.
+func (t *TrackerService) GetMostRecentBook(ctx context.Context) (*domain.Book, *domain.ReadingSession, error) {
+	books, err := t.repo.ListAll(ctx)
+	if err != nil {
+		return nil, nil, err
+	}
+	var latestBook *domain.Book
+	var latestSession *domain.ReadingSession
+	for _, book := range books {
+		s, err := t.session.GetLastReadingSession(ctx, book.ID)
+		if err != nil || s == nil {
+			continue
+		}
+		if latestSession == nil || s.LastReadingTime.After(latestSession.LastReadingTime) {
+			b := book
+			latestBook = b
+			latestSession = s
+		}
+	}
+	return latestBook, latestSession, nil
 }
