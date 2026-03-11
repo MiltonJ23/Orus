@@ -15,7 +15,6 @@ import (
 )
 
 func main() {
-	// 1. Infrastructure
 	dbPath := filepath.Join(".", "orus.db")
 	store, err := sqlite.NewStorage(dbPath)
 	if err != nil {
@@ -26,27 +25,25 @@ func main() {
 	fileExtractor := extractor.NewLocalFileExtractor()
 	logNotifier := notifier.NewLogNotifier()
 
-	// 2. Services
 	libService := service.NewLibraryService(store, fileExtractor)
 	trackerService := service.NewTrackerService(store, store)
 	sheetService := service.NewReadingSheetService(store, store)
 	reminderService := service.NewReminderService(store, logNotifier)
 	sharingService := service.NewSharingService(store, store)
 
-	// 3. Planificateur de rappels (goroutine de fond)
 	go reminderService.StartScheduler()
 	defer reminderService.Stop()
 
-	// 4. UI
+	// fileExtractor implémente port.ContentReader (ReadBookText)
 	windowManager := views.NewWindowManager(
 		libService,
 		trackerService,
 		sheetService,
 		reminderService,
 		sharingService,
+		fileExtractor,
 	)
 
-	// 5. Boucle UI dans une goroutine
 	go func() {
 		if err := windowManager.Run(); err != nil {
 			log.Fatalf("UI Engine crashed: %v", err)
@@ -54,6 +51,5 @@ func main() {
 		os.Exit(0)
 	}()
 
-	// 6. Thread principal OS (requis par Gio/macOS)
 	app.Main()
 }

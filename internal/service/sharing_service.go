@@ -5,7 +5,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"time"
 
@@ -13,7 +15,6 @@ import (
 	"github.com/MiltonJ23/Orus/internal/port"
 )
 
-// ShareFormat définit le format d'export
 type ShareFormat string
 
 const (
@@ -22,7 +23,6 @@ const (
 	ShareFormatText     ShareFormat = "txt"
 )
 
-// SharingService gère l'export et le partage de livres et fiches
 type SharingService struct {
 	bookRepo  port.BookRepository
 	sheetRepo port.ReadingSheetRepository
@@ -32,19 +32,93 @@ func NewSharingService(bookRepo port.BookRepository, sheetRepo port.ReadingSheet
 	return &SharingService{bookRepo: bookRepo, sheetRepo: sheetRepo}
 }
 
-// ExportBookInfo exporte les informations d'un livre dans un fichier
+// PickExportDirectory ouvre le sélecteur de dossier natif de l'OS.
+func PickExportDirectory() string {
+	var cmd *exec.Cmd
+	switch runtime.GOOS {
+	case "darwin":
+		cmd = exec.Command("osascript", "-e",
+			`POSIX path of (choose folder with prompt "Choisir le dossier d'export Orus :")`)
+	case "linux":
+		if _, err := exec.LookPath("zenity"); err == nil {
+			cmd = exec.Command("zenity", "--file-selection", "--directory", "--title=Dossier d'export Orus")
+		} else if _, err := exec.LookPath("kdialog"); err == nil {
+			cmd = exec.Command("kdialog", "--getexistingdirectory", ".", "--title", "Dossier d'export")
+		}
+	case "windows":
+		cmd = exec.Command("powershell", "-Command",
+			`(New-Object -ComObject Shell.Application).BrowseForFolder(0,"Dossier d'export",0).Self.Path`)
+	}
+	if cmd == nil {
+		return "."
+	}
+	out, err := cmd.Output()
+	if err != nil {
+		return "."
+	}
+	dir := strings.TrimSpace(string(out))
+	if dir == "" {
+		return "."
+	}
+	return dir
+}
+
+func (s *SharingService) ExportLibrary(ctx context.Context, format ShareFormat, outputDir string) (string, error) {
+	books, err := s.bookRepo.ListAll(ctx)
+	if err != nil {
+		return "", fmt.Errorf("failed to list books: %w", err)
+	}
+	var sb strings.Builder
+	switch format {
+	case ShareFormatMarkdown:
+		sb.WriteString("# Ma bibliotheque Orus\n\n")
+		sb.WriteString(fmt.Sprintf("*Exporte le %s — %d livre(s)*\n\n---\n\n", time.Now().Format("02 janvier 2006"), len(books)))
+		for _, book := range books {
+			sheet, _ := s.sheetRepo.GetSheetByBookID(ctx, book.ID)
+			sb.WriteString(s.buildBookMarkdown(book, sheet))
+			sb.WriteString("\n---\n\n")
+		}
+	case ShareFormatJSON:
+		type entry struct {
+			Book  *domain.Book         `json:"book"`
+			Sheet *domain.ReadingSheet `json:"reading_sheet,omitempty"`
+		}
+		var entries []entry
+		for _, book := range books {
+			sheet, _ := s.sheetRepo.GetSheetByBookID(ctx, book.ID)
+			entries = append(entries, entry{Book: book, Sheet: sheet})
+		}
+		data, _ := json.MarshalIndent(entries, "", "  ")
+		sb.Write(data)
+	default:
+		sb.WriteString(fmt.Sprintf("=== BIBLIOTHEQUE ORUS — %s ===\n\n", time.Now().Format("02/01/2006")))
+		for i, book := range books {
+			sheet, _ := s.sheetRepo.GetSheetByBookID(ctx, book.ID)
+			sb.WriteString(fmt.Sprintf("[%d] ", i+1))
+			sb.WriteString(s.buildBookText(book, sheet))
+			sb.WriteString("\n\n")
+		}
+	}
+	ext := string(format)
+	if format == ShareFormatText {
+		ext = "txt"
+	}
+	fileName := fmt.Sprintf("orus_bibliotheque_%s.%s", time.Now().Format("20060102"), ext)
+	filePath := filepath.Join(outputDir, fileName)
+	if err := os.WriteFile(filePath, []byte(sb.String()), 0644); err != nil {
+		return "", fmt.Errorf("failed to write: %w", err)
+	}
+	return filePath, nil
+}
+
 func (s *SharingService) ExportBookInfo(ctx context.Context, bookID string, format ShareFormat, outputDir string) (string, error) {
 	book, err := s.bookRepo.GetByID(ctx, bookID)
 	if err != nil {
 		return "", fmt.Errorf("book not found: %w", err)
 	}
-
-	// Récupérer la fiche si elle existe
 	sheet, _ := s.sheetRepo.GetSheetByBookID(ctx, bookID)
-
 	var content string
 	var ext string
-
 	switch format {
 	case ShareFormatJSON:
 		content, err = s.buildBookJSON(book, sheet)
@@ -56,89 +130,20 @@ func (s *SharingService) ExportBookInfo(ctx context.Context, bookID string, form
 		content = s.buildBookText(book, sheet)
 		ext = "txt"
 	}
-
 	if err != nil {
-		return "", fmt.Errorf("failed to build export content: %w", err)
+		return "", err
 	}
-
-	fileName := fmt.Sprintf("orus_%s_%s.%s",
-		sanitizeFileName(book.Title),
-		time.Now().Format("20060102"),
-		ext,
-	)
-	filePath := filepath.Join(outputDir, fileName)
-
-	if err := os.WriteFile(filePath, []byte(content), 0644); err != nil {
-		return "", fmt.Errorf("failed to write export file: %w", err)
-	}
-	return filePath, nil
+	filePath := filepath.Join(outputDir, fmt.Sprintf("orus_%s_%s.%s", sanitizeFileName(book.Title), time.Now().Format("20060102"), ext))
+	return filePath, os.WriteFile(filePath, []byte(content), 0644)
 }
 
-// ExportLibrary exporte toute la bibliothèque
-func (s *SharingService) ExportLibrary(ctx context.Context, format ShareFormat, outputDir string) (string, error) {
-	books, err := s.bookRepo.ListAll(ctx)
-	if err != nil {
-		return "", fmt.Errorf("failed to list books: %w", err)
-	}
-
-	var sb strings.Builder
-
-	switch format {
-	case ShareFormatMarkdown:
-		sb.WriteString("# 📚 Ma bibliothèque Orus\n\n")
-		sb.WriteString(fmt.Sprintf("*Exporté le %s*\n\n", time.Now().Format("02 janvier 2006")))
-		sb.WriteString("---\n\n")
-		for _, book := range books {
-			sheet, _ := s.sheetRepo.GetSheetByBookID(ctx, book.ID)
-			sb.WriteString(s.buildBookMarkdown(book, sheet))
-			sb.WriteString("\n---\n\n")
-		}
-	case ShareFormatJSON:
-		type exportEntry struct {
-			Book  *domain.Book         `json:"book"`
-			Sheet *domain.ReadingSheet `json:"reading_sheet,omitempty"`
-		}
-		var entries []exportEntry
-		for _, book := range books {
-			sheet, _ := s.sheetRepo.GetSheetByBookID(ctx, book.ID)
-			entries = append(entries, exportEntry{Book: book, Sheet: sheet})
-		}
-		data, _ := json.MarshalIndent(entries, "", "  ")
-		sb.Write(data)
-	default:
-		sb.WriteString(fmt.Sprintf("=== MA BIBLIOTHÈQUE ORUS — %s ===\n\n", time.Now().Format("02/01/2006")))
-		for i, book := range books {
-			sheet, _ := s.sheetRepo.GetSheetByBookID(ctx, book.ID)
-			sb.WriteString(fmt.Sprintf("[%d] ", i+1))
-			sb.WriteString(s.buildBookText(book, sheet))
-			sb.WriteString("\n\n")
-		}
-	}
-
-	ext := string(format)
-	if format == ShareFormatText {
-		ext = "txt"
-	}
-
-	fileName := fmt.Sprintf("orus_bibliotheque_%s.%s", time.Now().Format("20060102"), ext)
-	filePath := filepath.Join(outputDir, fileName)
-
-	if err := os.WriteFile(filePath, []byte(sb.String()), 0644); err != nil {
-		return "", fmt.Errorf("failed to write library export: %w", err)
-	}
-	return filePath, nil
-}
-
-// ExportReadingSheet exporte uniquement la fiche de lecture d'un livre
 func (s *SharingService) ExportReadingSheet(ctx context.Context, sheetID string, format ShareFormat, outputDir string) (string, error) {
 	sheet, err := s.sheetRepo.GetSheetByID(ctx, sheetID)
 	if err != nil {
-		return "", fmt.Errorf("reading sheet not found: %w", err)
+		return "", fmt.Errorf("sheet not found: %w", err)
 	}
-
 	var content string
 	var ext string
-
 	switch format {
 	case ShareFormatJSON:
 		data, _ := json.MarshalIndent(sheet, "", "  ")
@@ -151,40 +156,19 @@ func (s *SharingService) ExportReadingSheet(ctx context.Context, sheetID string,
 		content = s.buildSheetText(sheet)
 		ext = "txt"
 	}
-
-	fileName := fmt.Sprintf("fiche_%s_%s.%s",
-		sanitizeFileName(sheet.BookTitle),
-		time.Now().Format("20060102"),
-		ext,
-	)
-	filePath := filepath.Join(outputDir, fileName)
-
-	if err := os.WriteFile(filePath, []byte(content), 0644); err != nil {
-		return "", fmt.Errorf("failed to write sheet export: %w", err)
-	}
-	return filePath, nil
+	filePath := filepath.Join(outputDir, fmt.Sprintf("fiche_%s_%s.%s", sanitizeFileName(sheet.BookTitle), time.Now().Format("20060102"), ext))
+	return filePath, os.WriteFile(filePath, []byte(content), 0644)
 }
 
-// --- Builders ---
-
 func (s *SharingService) buildBookJSON(book *domain.Book, sheet *domain.ReadingSheet) (string, error) {
-	payload := map[string]any{
-		"book":          book,
-		"reading_sheet": sheet,
-		"exported_at":   time.Now(),
-	}
-	data, err := json.MarshalIndent(payload, "", "  ")
+	data, err := json.MarshalIndent(map[string]any{"book": book, "reading_sheet": sheet, "exported_at": time.Now()}, "", "  ")
 	return string(data), err
 }
 
 func (s *SharingService) buildBookMarkdown(book *domain.Book, sheet *domain.ReadingSheet) string {
 	var sb strings.Builder
-	sb.WriteString(fmt.Sprintf("## 📖 %s\n\n", book.Title))
-	sb.WriteString(fmt.Sprintf("**Auteur :** %s  \n", orUnknown(book.Author)))
-	sb.WriteString(fmt.Sprintf("**Format :** %s  \n", book.Format))
-	sb.WriteString(fmt.Sprintf("**Pages :** %d  \n", book.TotalPages))
-	sb.WriteString(fmt.Sprintf("**Ajouté le :** %s  \n\n", book.AddedAt.Format("02 Jan 2006")))
-
+	sb.WriteString(fmt.Sprintf("## %s\n\n**Auteur :** %s  \n**Format :** %s  \n**Pages :** %d  \n**Ajoute le :** %s  \n\n",
+		book.Title, orUnknown(book.Author), book.Format, book.TotalPages, book.AddedAt.Format("02 Jan 2006")))
 	if sheet != nil {
 		sb.WriteString(s.buildSheetMarkdown(sheet))
 	}
@@ -193,60 +177,51 @@ func (s *SharingService) buildBookMarkdown(book *domain.Book, sheet *domain.Read
 
 func (s *SharingService) buildSheetMarkdown(sheet *domain.ReadingSheet) string {
 	var sb strings.Builder
-	sb.WriteString("### 🗒️ Fiche de lecture\n\n")
-
+	sb.WriteString("### Fiche de lecture\n\n")
 	if sheet.Rating > 0 {
-		sb.WriteString(fmt.Sprintf("**Note :** %s (%d/5)  \n\n", sheet.StarString(), sheet.Rating))
+		sb.WriteString(fmt.Sprintf("**Note :** %s (%d/5)\n\n", sheet.StarString(), sheet.Rating))
 	}
 	if len(sheet.Tags) > 0 {
-		sb.WriteString(fmt.Sprintf("**Tags :** %s  \n\n", strings.Join(sheet.Tags, " • ")))
+		sb.WriteString(fmt.Sprintf("**Tags :** %s\n\n", strings.Join(sheet.Tags, " - ")))
 	}
 	if sheet.Summary != "" {
-		sb.WriteString("**Résumé personnel :**\n\n")
-		sb.WriteString(sheet.Summary + "\n\n")
+		sb.WriteString("**Resume :**\n\n" + sheet.Summary + "\n\n")
 	}
-	if len(sheet.Quotes) > 0 {
-		sb.WriteString("**Citations favorites :**\n\n")
-		for _, q := range sheet.Quotes {
-			sb.WriteString(fmt.Sprintf("> %s\n\n", q))
-		}
+	for _, q := range sheet.Quotes {
+		sb.WriteString(fmt.Sprintf("> %s\n\n", q))
 	}
 	return sb.String()
 }
 
 func (s *SharingService) buildBookText(book *domain.Book, sheet *domain.ReadingSheet) string {
-	var sb strings.Builder
-	sb.WriteString(fmt.Sprintf("TITRE   : %s\n", book.Title))
-	sb.WriteString(fmt.Sprintf("AUTEUR  : %s\n", orUnknown(book.Author)))
-	sb.WriteString(fmt.Sprintf("FORMAT  : %s | PAGES : %d\n", book.Format, book.TotalPages))
+	out := fmt.Sprintf("TITRE: %s | AUTEUR: %s | FORMAT: %s | PAGES: %d\n", book.Title, orUnknown(book.Author), book.Format, book.TotalPages)
 	if sheet != nil {
-		sb.WriteString(s.buildSheetText(sheet))
+		out += s.buildSheetText(sheet)
 	}
-	return sb.String()
+	return out
 }
 
 func (s *SharingService) buildSheetText(sheet *domain.ReadingSheet) string {
 	var sb strings.Builder
-	sb.WriteString("--- FICHE DE LECTURE ---\n")
 	if sheet.Rating > 0 {
-		sb.WriteString(fmt.Sprintf("Note    : %s\n", sheet.StarString()))
+		sb.WriteString(fmt.Sprintf("Note: %s | ", sheet.StarString()))
 	}
 	if sheet.Summary != "" {
-		sb.WriteString(fmt.Sprintf("Résumé  : %s\n", sheet.Summary))
+		sb.WriteString("Resume: " + sheet.Summary + "\n")
 	}
 	for i, q := range sheet.Quotes {
-		sb.WriteString(fmt.Sprintf("Citation %d : « %s »\n", i+1, q))
+		sb.WriteString(fmt.Sprintf("Cit.%d: %s\n", i+1, q))
 	}
 	return sb.String()
 }
 
 func sanitizeFileName(name string) string {
-	replacer := strings.NewReplacer(" ", "_", "/", "-", "\\", "-", ":", "", "?", "", "*", "")
-	result := replacer.Replace(name)
-	if len(result) > 50 {
-		result = result[:50]
+	r := strings.NewReplacer(" ", "_", "/", "-", "\\", "-", ":", "", "?", "", "*", "")
+	out := r.Replace(name)
+	if len(out) > 50 {
+		return out[:50]
 	}
-	return result
+	return out
 }
 
 func orUnknown(s string) string {
