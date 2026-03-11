@@ -207,6 +207,7 @@ func TestSessionRepository(t *testing.T) {
 	store.Save(ctx, book)
 
 	session := &domain.ReadingSession{
+		SessionID:       "session-1",
 		BookID:          book.ID,
 		CurrentPage:     42,
 		LastReadingTime: time.Now(),
@@ -222,8 +223,434 @@ func TestSessionRepository(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetSessionByID failed: %v", err)
 	}
-	if fetched.CurrentPage != 42 {
-		t.Errorf("Expected page 42, got %d", fetched.CurrentPage)
+	if len(fetched) == 0 {
+		t.Fatal("Expected at least one session")
+	}
+	if fetched[0].CurrentPage != 42 {
+		t.Errorf("Expected page 42, got %d", fetched[0].CurrentPage)
+	}
+}
+
+func TestSessionRepository_GetLastReadingSession(t *testing.T) {
+	store, cleanup := setupTestDB(t)
+	defer cleanup()
+	ctx := context.Background()
+
+	book, _ := domain.NewBook("Session Book", "Reader", "path", "epub", 200)
+	store.Save(ctx, book)
+
+	// Save multiple sessions at different times
+	session1 := &domain.ReadingSession{
+		SessionID:       "session-1",
+		BookID:          book.ID,
+		CurrentPage:     10,
+		LastReadingTime: time.Now().Add(-2 * time.Hour),
+	}
+	session2 := &domain.ReadingSession{
+		SessionID:       "session-2",
+		BookID:          book.ID,
+		CurrentPage:     25,
+		LastReadingTime: time.Now().Add(-1 * time.Hour),
+	}
+	session3 := &domain.ReadingSession{
+		SessionID:       "session-3",
+		BookID:          book.ID,
+		CurrentPage:     42,
+		LastReadingTime: time.Now(),
+	}
+
+	store.SaveSession(ctx, session1)
+	store.SaveSession(ctx, session2)
+	store.SaveSession(ctx, session3)
+
+	// Get last session
+	lastSession, err := store.GetLastReadingSession(ctx, book.ID)
+	if err != nil {
+		t.Fatalf("GetLastReadingSession failed: %v", err)
+	}
+	if lastSession == nil {
+		t.Fatal("Expected a session, got nil")
+	}
+	if lastSession.CurrentPage != 42 {
+		t.Errorf("Expected last session page 42, got %d", lastSession.CurrentPage)
+	}
+}
+
+func TestSessionRepository_GetLastReadingSession_NoSessions(t *testing.T) {
+	store, cleanup := setupTestDB(t)
+	defer cleanup()
+	ctx := context.Background()
+
+	book, _ := domain.NewBook("Session Book", "Reader", "path", "epub", 200)
+	store.Save(ctx, book)
+
+	// No sessions saved
+	lastSession, err := store.GetLastReadingSession(ctx, book.ID)
+	if err != nil {
+		t.Fatalf("Unexpected error: %v", err)
+	}
+	if lastSession != nil {
+		t.Errorf("Expected nil session for book with no sessions, got: %v", lastSession)
+	}
+}
+
+func TestSessionRepository_SaveWithoutSessionID(t *testing.T) {
+	store, cleanup := setupTestDB(t)
+	defer cleanup()
+	ctx := context.Background()
+
+	book, _ := domain.NewBook("Session Book", "Reader", "path", "epub", 200)
+	store.Save(ctx, book)
+
+	// Try to save session without session ID
+	session := &domain.ReadingSession{
+		SessionID:       "",
+		BookID:          book.ID,
+		CurrentPage:     42,
+		LastReadingTime: time.Now(),
+	}
+
+	err := store.SaveSession(ctx, session)
+	if err == nil {
+		t.Error("Expected error when saving session without session ID, got nil")
+	}
+}
+
+// --- REMINDER REPO TESTS ---
+
+func TestReminderRepository_Lifecycle(t *testing.T) {
+	store, cleanup := setupTestDB(t)
+	defer cleanup()
+	ctx := context.Background()
+
+	// Create prerequisite book
+	book, _ := domain.NewBook("Reminder Book", "Author", "path", domain.FormatPDF, 100)
+	store.Save(ctx, book)
+
+	// 1. Create and Save Reminder
+	reminder, err := domain.NewReminder(book.ID, book.Title, "Read 30 minutes", 20, 30, domain.FrequencyDaily)
+	if err != nil {
+		t.Fatalf("Failed to create reminder: %v", err)
+	}
+
+	if err := store.SaveReminder(ctx, reminder); err != nil {
+		t.Fatalf("Failed to save reminder: %v", err)
+	}
+
+	// 2. GetReminderByID
+	fetched, err := store.GetReminderByID(ctx, reminder.ID)
+	if err != nil {
+		t.Fatalf("Failed to get reminder: %v", err)
+	}
+	if fetched.Label != reminder.Label {
+		t.Errorf("Expected label %s, got %s", reminder.Label, fetched.Label)
+	}
+	if fetched.Hour != 20 || fetched.Minute != 30 {
+		t.Errorf("Expected time 20:30, got %d:%d", fetched.Hour, fetched.Minute)
+	}
+	if fetched.Frequency != domain.FrequencyDaily {
+		t.Errorf("Expected daily frequency, got %v", fetched.Frequency)
+	}
+
+	// 3. ListAllReminders
+	all, err := store.ListAllReminders(ctx)
+	if err != nil {
+		t.Fatalf("ListAllReminders failed: %v", err)
+	}
+	if len(all) != 1 {
+		t.Errorf("Expected 1 reminder, got %d", len(all))
+	}
+
+	// 4. Update Reminder
+	reminder.Label = "Read 1 hour"
+	reminder.Hour = 19
+	reminder.Enabled = false
+	if err := store.UpdateReminder(ctx, reminder); err != nil {
+		t.Fatalf("Update reminder failed: %v", err)
+	}
+
+	updated, _ := store.GetReminderByID(ctx, reminder.ID)
+	if updated.Label != "Read 1 hour" {
+		t.Errorf("Update failed. Expected 'Read 1 hour', got '%s'", updated.Label)
+	}
+	if updated.Hour != 19 {
+		t.Errorf("Expected hour 19, got %d", updated.Hour)
+	}
+	if updated.Enabled {
+		t.Error("Expected reminder to be disabled")
+	}
+
+	// 5. Delete Reminder
+	if err := store.DeleteReminder(ctx, reminder.ID); err != nil {
+		t.Fatalf("Delete reminder failed: %v", err)
+	}
+
+	_, err = store.GetReminderByID(ctx, reminder.ID)
+	if err != domain.ErrReminderNotFound {
+		t.Errorf("Expected ErrReminderNotFound after delete, got %v", err)
+	}
+}
+
+func TestReminderRepository_ListEnabledReminders(t *testing.T) {
+	store, cleanup := setupTestDB(t)
+	defer cleanup()
+	ctx := context.Background()
+
+	book, _ := domain.NewBook("Book", "Author", "path", domain.FormatPDF, 100)
+	store.Save(ctx, book)
+
+	// Create multiple reminders with different enabled states
+	r1, _ := domain.NewReminder(book.ID, book.Title, "Morning", 8, 0, domain.FrequencyDaily)
+	r2, _ := domain.NewReminder(book.ID, book.Title, "Evening", 20, 0, domain.FrequencyDaily)
+	r3, _ := domain.NewReminder(book.ID, book.Title, "Disabled", 12, 0, domain.FrequencyWeekly)
+	r3.Enabled = false
+
+	store.SaveReminder(ctx, r1)
+	store.SaveReminder(ctx, r2)
+	store.SaveReminder(ctx, r3)
+
+	// List only enabled reminders
+	enabled, err := store.ListEnabledReminders(ctx)
+	if err != nil {
+		t.Fatalf("ListEnabledReminders failed: %v", err)
+	}
+	if len(enabled) != 2 {
+		t.Errorf("Expected 2 enabled reminders, got %d", len(enabled))
+	}
+
+	for _, r := range enabled {
+		if !r.Enabled {
+			t.Errorf("Found disabled reminder in enabled list: %s", r.Label)
+		}
+	}
+}
+
+func TestReminderRepository_GlobalReminder(t *testing.T) {
+	store, cleanup := setupTestDB(t)
+	defer cleanup()
+	ctx := context.Background()
+
+	// Create global reminder (no book association)
+	reminder, err := domain.NewReminder("", "", "General Reading Time", 18, 0, domain.FrequencyWeekdays)
+	if err != nil {
+		t.Fatalf("Failed to create global reminder: %v", err)
+	}
+
+	if err := store.SaveReminder(ctx, reminder); err != nil {
+		t.Fatalf("Failed to save global reminder: %v", err)
+	}
+
+	fetched, err := store.GetReminderByID(ctx, reminder.ID)
+	if err != nil {
+		t.Fatalf("Failed to get global reminder: %v", err)
+	}
+	if fetched.BookID != "" {
+		t.Errorf("Expected empty book ID for global reminder, got %s", fetched.BookID)
+	}
+	if fetched.Frequency != domain.FrequencyWeekdays {
+		t.Errorf("Expected weekdays frequency, got %v", fetched.Frequency)
+	}
+}
+
+// --- READING SHEET REPO TESTS ---
+
+func TestReadingSheetRepository_Lifecycle(t *testing.T) {
+	store, cleanup := setupTestDB(t)
+	defer cleanup()
+	ctx := context.Background()
+
+	// Create prerequisite book
+	book, _ := domain.NewBook("Test Book", "Test Author", "path", domain.FormatEPUB, 300)
+	store.Save(ctx, book)
+
+	// 1. Create and Save Sheet
+	quotes := []string{"Quote 1", "Quote 2"}
+	tags := []string{"fiction", "adventure"}
+	sheet, err := domain.NewReadingSheet(book.ID, book.Title, "Great book!", 5, quotes, tags)
+	if err != nil {
+		t.Fatalf("Failed to create reading sheet: %v", err)
+	}
+
+	if err := store.SaveSheet(ctx, sheet); err != nil {
+		t.Fatalf("Failed to save reading sheet: %v", err)
+	}
+
+	// 2. GetSheetByID
+	fetched, err := store.GetSheetByID(ctx, sheet.ID)
+	if err != nil {
+		t.Fatalf("Failed to get sheet by ID: %v", err)
+	}
+	if fetched.Summary != "Great book!" {
+		t.Errorf("Expected summary 'Great book!', got '%s'", fetched.Summary)
+	}
+	if fetched.Rating != 5 {
+		t.Errorf("Expected rating 5, got %d", fetched.Rating)
+	}
+	if len(fetched.Quotes) != 2 {
+		t.Errorf("Expected 2 quotes, got %d", len(fetched.Quotes))
+	}
+	if len(fetched.Tags) != 2 {
+		t.Errorf("Expected 2 tags, got %d", len(fetched.Tags))
+	}
+
+	// 3. GetSheetByBookID
+	bookSheet, err := store.GetSheetByBookID(ctx, book.ID)
+	if err != nil {
+		t.Fatalf("Failed to get sheet by book ID: %v", err)
+	}
+	if bookSheet.ID != sheet.ID {
+		t.Error("Sheet ID mismatch")
+	}
+
+	// 4. ListAllSheets
+	all, err := store.ListAllSheets(ctx)
+	if err != nil {
+		t.Fatalf("ListAllSheets failed: %v", err)
+	}
+	if len(all) != 1 {
+		t.Errorf("Expected 1 sheet, got %d", len(all))
+	}
+
+	// 5. Update Sheet
+	sheet.Summary = "Updated summary"
+	sheet.Rating = 4
+	sheet.Quotes = append(sheet.Quotes, "Quote 3")
+	if err := store.UpdateSheet(ctx, sheet); err != nil {
+		t.Fatalf("Update sheet failed: %v", err)
+	}
+
+	updated, _ := store.GetSheetByID(ctx, sheet.ID)
+	if updated.Summary != "Updated summary" {
+		t.Errorf("Update failed. Expected 'Updated summary', got '%s'", updated.Summary)
+	}
+	if updated.Rating != 4 {
+		t.Errorf("Expected rating 4, got %d", updated.Rating)
+	}
+	if len(updated.Quotes) != 3 {
+		t.Errorf("Expected 3 quotes after update, got %d", len(updated.Quotes))
+	}
+
+	// 6. Delete Sheet
+	if err := store.DeleteSheet(ctx, sheet.ID); err != nil {
+		t.Fatalf("Delete sheet failed: %v", err)
+	}
+
+	_, err = store.GetSheetByID(ctx, sheet.ID)
+	if err != domain.ErrReadingSheetNotFound {
+		t.Errorf("Expected ErrReadingSheetNotFound after delete, got %v", err)
+	}
+}
+
+func TestReadingSheetRepository_EmptyQuotesAndTags(t *testing.T) {
+	store, cleanup := setupTestDB(t)
+	defer cleanup()
+	ctx := context.Background()
+
+	book, _ := domain.NewBook("Book", "Author", "path", domain.FormatPDF, 100)
+	store.Save(ctx, book)
+
+	// Create sheet with empty quotes and tags
+	sheet, _ := domain.NewReadingSheet(book.ID, book.Title, "Summary", 3, nil, nil)
+	if err := store.SaveSheet(ctx, sheet); err != nil {
+		t.Fatalf("Failed to save sheet with empty quotes/tags: %v", err)
+	}
+
+	fetched, err := store.GetSheetByID(ctx, sheet.ID)
+	if err != nil {
+		t.Fatalf("Failed to get sheet: %v", err)
+	}
+
+	// When empty, the slices may be nil or empty depending on storage implementation
+	// Both are valid representations of "no items"
+	if fetched.Quotes != nil && len(fetched.Quotes) > 0 {
+		t.Error("Expected empty or nil quotes slice for sheet with no quotes")
+	}
+	if fetched.Tags != nil && len(fetched.Tags) > 0 {
+		t.Error("Expected empty or nil tags slice for sheet with no tags")
+	}
+}
+
+func TestReadingSheetRepository_SpecialCharactersInQuotes(t *testing.T) {
+	store, cleanup := setupTestDB(t)
+	defer cleanup()
+	ctx := context.Background()
+
+	book, _ := domain.NewBook("Book", "Author", "path", domain.FormatPDF, 100)
+	store.Save(ctx, book)
+
+	// Quotes with special characters (avoiding "||" which is the storage separator)
+	quotes := []string{
+		"Quote with commas, periods, and dashes",
+		"Quote with \"double quotes\" and 'single quotes'",
+		"Quote with special chars: @#$%^&*()",
+	}
+	sheet, _ := domain.NewReadingSheet(book.ID, book.Title, "Test", 4, quotes, []string{"tag1", "tag2"})
+	if err := store.SaveSheet(ctx, sheet); err != nil {
+		t.Fatalf("Failed to save sheet: %v", err)
+	}
+
+	fetched, err := store.GetSheetByID(ctx, sheet.ID)
+	if err != nil {
+		t.Fatalf("Failed to get sheet: %v", err)
+	}
+
+	// Verify quotes are properly stored and retrieved
+	if len(fetched.Quotes) != len(quotes) {
+		t.Errorf("Expected %d quotes, got %d", len(quotes), len(fetched.Quotes))
+	}
+
+	// Verify tags are properly stored
+	if len(fetched.Tags) != 2 {
+		t.Errorf("Expected 2 tags, got %d", len(fetched.Tags))
+	}
+}
+
+func TestReadingSheetRepository_SeparatorInQuotes(t *testing.T) {
+	store, cleanup := setupTestDB(t)
+	defer cleanup()
+	ctx := context.Background()
+
+	book, _ := domain.NewBook("Book", "Author", "path", domain.FormatPDF, 100)
+	store.Save(ctx, book)
+
+	// Test that the separator "||" causes issues (known limitation)
+	// This documents the behavior rather than testing correctness
+	quotes := []string{
+		"Quote with || separator inside",
+	}
+	sheet, _ := domain.NewReadingSheet(book.ID, book.Title, "Test", 4, quotes, []string{"tag1"})
+	if err := store.SaveSheet(ctx, sheet); err != nil {
+		t.Fatalf("Failed to save sheet: %v", err)
+	}
+
+	fetched, err := store.GetSheetByID(ctx, sheet.ID)
+	if err != nil {
+		t.Fatalf("Failed to get sheet: %v", err)
+	}
+
+	// Note: The separator "||" will cause the quote to be split
+	// This is a known limitation of the current storage implementation
+	// The test documents this behavior
+	if len(fetched.Quotes) == 1 {
+		t.Log("Storage correctly preserves quotes with || separator")
+	} else {
+		t.Logf("Note: Quotes with || separator get split. Got %d quotes instead of 1", len(fetched.Quotes))
+	}
+}
+
+func TestReadingSheetRepository_GetNotFound(t *testing.T) {
+	store, cleanup := setupTestDB(t)
+	defer cleanup()
+	ctx := context.Background()
+
+	_, err := store.GetSheetByID(ctx, "non-existent-id")
+	if err != domain.ErrReadingSheetNotFound {
+		t.Errorf("Expected ErrReadingSheetNotFound, got %v", err)
+	}
+
+	_, err = store.GetSheetByBookID(ctx, "non-existent-book-id")
+	if err != domain.ErrReadingSheetNotFound {
+		t.Errorf("Expected ErrReadingSheetNotFound for book, got %v", err)
 	}
 }
 
