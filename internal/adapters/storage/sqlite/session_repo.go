@@ -12,76 +12,66 @@ import (
 var _ port.SessionRepository = (*Storage)(nil)
 
 func (s *Storage) SaveSession(ctx context.Context, session *domain.ReadingSession) error {
-	// let's manage the context lifecycle
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
-
 	if session.SessionID == "" {
-		return fmt.Errorf("session id is required for saving the session")
+		return fmt.Errorf("session id is required")
 	}
-	// now let's build the query supposed to store a session
-	query := `INSERT INTO sessions (session_id,book_id,current_page,last_read_time) VALUES (?,?,?,?)`
-
-	_, queryExecError := s.db.ExecContext(ctx, query, session.SessionID, session.BookID, session.CurrentPage, session.LastReadingTime)
-	if queryExecError != nil {
-		return fmt.Errorf("unable to save session, an error occured during saving, %v", queryExecError)
-	}
-	return nil
+	_, err := s.db.ExecContext(ctx,
+		`INSERT OR REPLACE INTO sessions (session_id, book_id, current_page, last_read_time)
+		 VALUES (?, ?, ?, ?)`,
+		session.SessionID, session.BookID, session.CurrentPage, session.LastReadingTime)
+	return err
 }
 
+// GetSessionByID returns all sessions for a book, joining TotalPages from books.
 func (s *Storage) GetSessionByID(ctx context.Context, bookID string) ([]*domain.ReadingSession, error) {
-	// let's manage the context lifecycle
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
-
-	// we build the fetching query
-	query := `SELECT * FROM  sessions WHERE book_id = ?`
-
-	rows, fetchingError := s.db.QueryContext(ctx, query, bookID)
-	if fetchingError != nil {
-		return nil, fmt.Errorf("unable to retrieve session, an error occured : %v", fetchingError)
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT s.session_id, s.book_id, s.current_page, s.last_read_time,
+		       COALESCE(b.total_pages, 0)
+		FROM sessions s
+		LEFT JOIN books b ON b.id = s.book_id
+		WHERE s.book_id = ?`, bookID)
+	if err != nil {
+		return nil, fmt.Errorf("GetSessionByID: %w", err)
 	}
 	defer rows.Close()
-
-	// now let's exploit the stream
-	var sessions []*domain.ReadingSession
+	var out []*domain.ReadingSession
 	for rows.Next() {
 		ses := &domain.ReadingSession{}
-		scanningError := rows.Scan(&ses.SessionID, &ses.BookID, &ses.CurrentPage, &ses.LastReadingTime)
-		if scanningError != nil {
-			return nil, fmt.Errorf("unable to unload session from rows pointer, an error occured : %v", scanningError)
+		if err := rows.Scan(&ses.SessionID, &ses.BookID, &ses.CurrentPage,
+			&ses.LastReadingTime, &ses.TotalPages); err != nil {
+			return nil, err
 		}
-		sessions = append(sessions, ses)
+		out = append(out, ses)
 	}
-
-	streamIterationError := rows.Err()
-	if streamIterationError != nil {
-		return nil, fmt.Errorf("an error occured while iterating annotations row: %v", streamIterationError)
-	}
-
-	return sessions, nil
+	return out, rows.Err()
 }
 
+// GetLastReadingSession returns the most recent session, with TotalPages from books.
 func (s *Storage) GetLastReadingSession(ctx context.Context, bookId string) (*domain.ReadingSession, error) {
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
-
-	query := `SELECT session_id, book_id, current_page, last_read_time FROM sessions WHERE book_id = ? ORDER BY last_read_time DESC LIMIT 1`
-
-	rows, fetchingError := s.db.QueryContext(ctx, query, bookId)
-	if fetchingError != nil {
-		return nil, fmt.Errorf("unable to fetch last reading: %v", fetchingError)
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT s.session_id, s.book_id, s.current_page, s.last_read_time,
+		       COALESCE(b.total_pages, 0)
+		FROM sessions s
+		LEFT JOIN books b ON b.id = s.book_id
+		WHERE s.book_id = ?
+		ORDER BY s.last_read_time DESC LIMIT 1`, bookId)
+	if err != nil {
+		return nil, fmt.Errorf("GetLastReadingSession: %w", err)
 	}
 	defer rows.Close()
-
 	if rows.Next() {
-		var session domain.ReadingSession
-		scanningRowError := rows.Scan(&session.SessionID, &session.BookID, &session.CurrentPage, &session.LastReadingTime)
-		if scanningRowError != nil {
-			return nil, fmt.Errorf("scan error: %v", scanningRowError)
+		var ses domain.ReadingSession
+		if err := rows.Scan(&ses.SessionID, &ses.BookID, &ses.CurrentPage,
+			&ses.LastReadingTime, &ses.TotalPages); err != nil {
+			return nil, err
 		}
-		return &session, nil
+		return &ses, nil
 	}
-
 	return nil, nil
 }
