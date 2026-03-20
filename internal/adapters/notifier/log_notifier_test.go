@@ -168,3 +168,57 @@ func TestNewLogNotifier(t *testing.T) {
 		}
 	})
 }
+
+func TestLogNotifier_StdoutOutput(t *testing.T) {
+	// Capture stdout to verify the box-drawing output is also produced
+	originalStdout := os.Stdout
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatalf("could not create pipe: %v", err)
+	}
+	os.Stdout = w
+
+	notif := notifier.NewLogNotifier()
+	notif.Notify("Stdout Title", "Stdout Message")
+
+	w.Close()
+	os.Stdout = originalStdout
+
+	var buf bytes.Buffer
+	buf.ReadFrom(r)
+	output := buf.String()
+
+	if !strings.Contains(output, "Stdout Title") {
+		t.Errorf("expected stdout to contain title, got: %s", output)
+	}
+	if !strings.Contains(output, "Stdout Message") {
+		t.Errorf("expected stdout to contain message, got: %s", output)
+	}
+	// Verify box-drawing characters are printed
+	if !strings.Contains(output, "╔") || !strings.Contains(output, "╚") {
+		t.Errorf("expected box-drawing characters in stdout output, got: %s", output)
+	}
+}
+
+func TestLogNotifier_AlwaysReturnsNil(t *testing.T) {
+	// LogNotifier.Notify should always return nil (no failure path)
+	notif := notifier.NewLogNotifier()
+
+	// Silence log output during this test
+	var buf bytes.Buffer
+	log.SetOutput(&buf)
+	defer log.SetOutput(os.Stderr)
+
+	testCases := []struct{ title, message string }{
+		{"", ""},
+		{"T", "M"},
+		{strings.Repeat("x", 1000), strings.Repeat("y", 1000)},
+		{"Unicode 🎉", "Content 📖"},
+	}
+
+	for _, tc := range testCases {
+		if err := notif.Notify(tc.title, tc.message); err != nil {
+			t.Errorf("Notify(%q, %q) returned non-nil error: %v", tc.title, tc.message, err)
+		}
+	}
+}

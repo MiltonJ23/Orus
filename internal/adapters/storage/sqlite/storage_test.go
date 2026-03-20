@@ -671,3 +671,441 @@ func TestStorage_ContextCancellation(t *testing.T) {
 		t.Error("Expected error due to cancelled context, got nil")
 	}
 }
+
+// --- DB INITIALIZATION TESTS ---
+
+func TestNewStorage_EmptyPath(t *testing.T) {
+	_, err := sqlite.NewStorage("")
+	if err == nil {
+		t.Error("Expected error for empty dbPath, got nil")
+	}
+}
+
+func TestStorage_Close(t *testing.T) {
+	tmpFile, err := os.CreateTemp("", "orus_close_test_*.db")
+	if err != nil {
+		t.Fatalf("Could not create temp db file: %v", err)
+	}
+	dbPath := tmpFile.Name()
+	tmpFile.Close()
+	defer os.Remove(dbPath)
+
+	store, err := sqlite.NewStorage(dbPath)
+	if err != nil {
+		t.Fatalf("Could not init storage: %v", err)
+	}
+
+	if err := store.Close(); err != nil {
+		t.Errorf("Close() returned unexpected error: %v", err)
+	}
+
+	// Second close should not panic
+	if err := store.Close(); err != nil {
+		t.Logf("Second close returned: %v (may be expected)", err)
+	}
+}
+
+// --- ADDITIONAL ANNOTATION TESTS ---
+
+func TestAnnotationRepository_MultipleAnnotationsOnPage(t *testing.T) {
+	store, cleanup := setupTestDB(t)
+	defer cleanup()
+	ctx := context.Background()
+
+	book, _ := domain.NewBook("Multi Annotation Book", "Author", "path", domain.FormatPDF, 50)
+	store.Save(ctx, book)
+
+	// Save multiple annotations on the same page
+	for i := 1; i <= 3; i++ {
+		note := &domain.Annotation{
+			ID:             "note-page5-" + string(rune('0'+i)),
+			BookID:         book.ID,
+			AnnotationType: domain.AnnotationHighlight,
+			PageNo:         5,
+			CreatedAt:      time.Now(),
+		}
+		if err := store.SaveAnnotation(ctx, note); err != nil {
+			t.Fatalf("Failed to save annotation %d: %v", i, err)
+		}
+	}
+
+	notes, err := store.GetAnnotationByPage(ctx, 5, book.ID)
+	if err != nil {
+		t.Fatalf("GetAnnotationByPage failed: %v", err)
+	}
+	if len(notes) != 3 {
+		t.Errorf("Expected 3 annotations on page 5, got %d", len(notes))
+	}
+}
+
+func TestAnnotationRepository_GetByPage_Empty(t *testing.T) {
+	store, cleanup := setupTestDB(t)
+	defer cleanup()
+	ctx := context.Background()
+
+	book, _ := domain.NewBook("Empty Annotation Book", "Author", "path", domain.FormatPDF, 50)
+	store.Save(ctx, book)
+
+	// No annotations saved — expect empty slice, not error
+	notes, err := store.GetAnnotationByPage(ctx, 1, book.ID)
+	if err != nil {
+		t.Fatalf("Expected no error for empty page, got: %v", err)
+	}
+	if len(notes) != 0 {
+		t.Errorf("Expected 0 annotations, got %d", len(notes))
+	}
+}
+
+func TestAnnotationRepository_GetByType_Empty(t *testing.T) {
+	store, cleanup := setupTestDB(t)
+	defer cleanup()
+	ctx := context.Background()
+
+	// No annotations saved — querying by type should return empty slice
+	annots, err := store.GetAnnotationByType(ctx, string(domain.AnnotationBookmark))
+	if err != nil {
+		t.Fatalf("Expected no error for empty type query, got: %v", err)
+	}
+	if len(annots) != 0 {
+		t.Errorf("Expected 0 annotations, got %d", len(annots))
+	}
+}
+
+func TestAnnotationRepository_BookmarkType(t *testing.T) {
+	store, cleanup := setupTestDB(t)
+	defer cleanup()
+	ctx := context.Background()
+
+	book, _ := domain.NewBook("Bookmark Book", "Author", "path", domain.FormatEPUB, 200)
+	store.Save(ctx, book)
+
+	// Save a bookmark annotation
+	bm := &domain.Annotation{
+		ID:             "bm-1",
+		BookID:         book.ID,
+		AnnotationType: domain.AnnotationBookmark,
+		PageNo:         42,
+		CreatedAt:      time.Now(),
+	}
+	if err := store.SaveAnnotation(ctx, bm); err != nil {
+		t.Fatalf("Failed to save bookmark: %v", err)
+	}
+
+	// Retrieve by type
+	bookmarks, err := store.GetAnnotationByType(ctx, string(domain.AnnotationBookmark))
+	if err != nil {
+		t.Fatalf("GetAnnotationByType failed: %v", err)
+	}
+	if len(bookmarks) == 0 {
+		t.Fatal("Expected at least one bookmark")
+	}
+	if bookmarks[0].AnnotationType != domain.AnnotationBookmark {
+		t.Errorf("Expected bookmark type, got %v", bookmarks[0].AnnotationType)
+	}
+	if bookmarks[0].PageNo != 42 {
+		t.Errorf("Expected page 42, got %d", bookmarks[0].PageNo)
+	}
+}
+
+func TestAnnotationRepository_MixedTypes(t *testing.T) {
+	store, cleanup := setupTestDB(t)
+	defer cleanup()
+	ctx := context.Background()
+
+	book, _ := domain.NewBook("Mixed Annotations Book", "Author", "path", domain.FormatPDF, 100)
+	store.Save(ctx, book)
+
+	annotations := []*domain.Annotation{
+		{ID: "h1", BookID: book.ID, AnnotationType: domain.AnnotationHighlight, PageNo: 1, CreatedAt: time.Now()},
+		{ID: "h2", BookID: book.ID, AnnotationType: domain.AnnotationHighlight, PageNo: 2, CreatedAt: time.Now()},
+		{ID: "b1", BookID: book.ID, AnnotationType: domain.AnnotationBookmark, PageNo: 3, CreatedAt: time.Now()},
+	}
+	for _, a := range annotations {
+		store.SaveAnnotation(ctx, a)
+	}
+
+	highlights, err := store.GetAnnotationByType(ctx, string(domain.AnnotationHighlight))
+	if err != nil {
+		t.Fatalf("GetAnnotationByType failed: %v", err)
+	}
+	if len(highlights) != 2 {
+		t.Errorf("Expected 2 highlights, got %d", len(highlights))
+	}
+
+	bookmarks, err := store.GetAnnotationByType(ctx, string(domain.AnnotationBookmark))
+	if err != nil {
+		t.Fatalf("GetAnnotationByType failed: %v", err)
+	}
+	if len(bookmarks) != 1 {
+		t.Errorf("Expected 1 bookmark, got %d", len(bookmarks))
+	}
+}
+
+// --- ADDITIONAL SESSION TESTS ---
+
+func TestSessionRepository_TotalPagesFromJoin(t *testing.T) {
+	store, cleanup := setupTestDB(t)
+	defer cleanup()
+	ctx := context.Background()
+
+	book, _ := domain.NewBook("Pages Book", "Author", "path", domain.FormatPDF, 350)
+	store.Save(ctx, book)
+
+	session := &domain.ReadingSession{
+		SessionID:       "s-pages",
+		BookID:          book.ID,
+		CurrentPage:     100,
+		LastReadingTime: time.Now(),
+	}
+	store.SaveSession(ctx, session)
+
+	fetched, err := store.GetSessionByID(ctx, book.ID)
+	if err != nil {
+		t.Fatalf("GetSessionByID failed: %v", err)
+	}
+	if len(fetched) == 0 {
+		t.Fatal("Expected session, got none")
+	}
+	if fetched[0].TotalPages != 350 {
+		t.Errorf("Expected TotalPages=350 from books join, got %d", fetched[0].TotalPages)
+	}
+}
+
+func TestSessionRepository_GetByID_UnknownBook(t *testing.T) {
+	store, cleanup := setupTestDB(t)
+	defer cleanup()
+	ctx := context.Background()
+
+	sessions, err := store.GetSessionByID(ctx, "non-existent-book-id")
+	if err != nil {
+		t.Fatalf("Expected no error for unknown book, got: %v", err)
+	}
+	if len(sessions) != 0 {
+		t.Errorf("Expected 0 sessions for unknown book, got %d", len(sessions))
+	}
+}
+
+func TestSessionRepository_Upsert(t *testing.T) {
+	store, cleanup := setupTestDB(t)
+	defer cleanup()
+	ctx := context.Background()
+
+	book, _ := domain.NewBook("Upsert Book", "Author", "path", domain.FormatPDF, 100)
+	store.Save(ctx, book)
+
+	// Save initial session
+	session := &domain.ReadingSession{
+		SessionID:       "s-upsert",
+		BookID:          book.ID,
+		CurrentPage:     10,
+		LastReadingTime: time.Now(),
+	}
+	if err := store.SaveSession(ctx, session); err != nil {
+		t.Fatalf("Initial SaveSession failed: %v", err)
+	}
+
+	// Upsert with updated page
+	session.CurrentPage = 50
+	if err := store.SaveSession(ctx, session); err != nil {
+		t.Fatalf("Upsert SaveSession failed: %v", err)
+	}
+
+	fetched, err := store.GetSessionByID(ctx, book.ID)
+	if err != nil {
+		t.Fatalf("GetSessionByID failed: %v", err)
+	}
+	if len(fetched) != 1 {
+		t.Errorf("Expected 1 session after upsert, got %d", len(fetched))
+	}
+	if fetched[0].CurrentPage != 50 {
+		t.Errorf("Expected updated page 50, got %d", fetched[0].CurrentPage)
+	}
+}
+
+// --- ADDITIONAL REMINDER TESTS ---
+
+func TestReminderRepository_FrequencyOnce(t *testing.T) {
+	store, cleanup := setupTestDB(t)
+	defer cleanup()
+	ctx := context.Background()
+
+	reminder, err := domain.NewReminder("", "", "One time reading", 10, 0, domain.FrequencyOnce)
+	if err != nil {
+		t.Fatalf("Failed to create once reminder: %v", err)
+	}
+
+	if err := store.SaveReminder(ctx, reminder); err != nil {
+		t.Fatalf("Failed to save once reminder: %v", err)
+	}
+
+	fetched, err := store.GetReminderByID(ctx, reminder.ID)
+	if err != nil {
+		t.Fatalf("Failed to get once reminder: %v", err)
+	}
+	if fetched.Frequency != domain.FrequencyOnce {
+		t.Errorf("Expected FrequencyOnce, got %v", fetched.Frequency)
+	}
+}
+
+func TestReminderRepository_GetNotFound(t *testing.T) {
+	store, cleanup := setupTestDB(t)
+	defer cleanup()
+	ctx := context.Background()
+
+	_, err := store.GetReminderByID(ctx, "non-existent-reminder-id")
+	if err != domain.ErrReminderNotFound {
+		t.Errorf("Expected ErrReminderNotFound, got %v", err)
+	}
+}
+
+func TestReminderRepository_ListAll_Empty(t *testing.T) {
+	store, cleanup := setupTestDB(t)
+	defer cleanup()
+	ctx := context.Background()
+
+	reminders, err := store.ListAllReminders(ctx)
+	if err != nil {
+		t.Fatalf("ListAllReminders failed on empty DB: %v", err)
+	}
+	if len(reminders) != 0 {
+		t.Errorf("Expected 0 reminders on empty DB, got %d", len(reminders))
+	}
+}
+
+func TestReminderRepository_WeeklyFrequency(t *testing.T) {
+	store, cleanup := setupTestDB(t)
+	defer cleanup()
+	ctx := context.Background()
+
+	reminder, err := domain.NewReminder("", "", "Weekly reading", 9, 0, domain.FrequencyWeekly)
+	if err != nil {
+		t.Fatalf("Failed to create weekly reminder: %v", err)
+	}
+
+	if err := store.SaveReminder(ctx, reminder); err != nil {
+		t.Fatalf("Failed to save weekly reminder: %v", err)
+	}
+
+	fetched, err := store.GetReminderByID(ctx, reminder.ID)
+	if err != nil {
+		t.Fatalf("Failed to get weekly reminder: %v", err)
+	}
+	if fetched.Frequency != domain.FrequencyWeekly {
+		t.Errorf("Expected FrequencyWeekly, got %v", fetched.Frequency)
+	}
+}
+
+// --- ADDITIONAL READING SHEET TESTS ---
+
+func TestReadingSheetRepository_ListAll_Empty(t *testing.T) {
+	store, cleanup := setupTestDB(t)
+	defer cleanup()
+	ctx := context.Background()
+
+	sheets, err := store.ListAllSheets(ctx)
+	if err != nil {
+		t.Fatalf("ListAllSheets failed on empty DB: %v", err)
+	}
+	if len(sheets) != 0 {
+		t.Errorf("Expected 0 sheets on empty DB, got %d", len(sheets))
+	}
+}
+
+func TestReadingSheetRepository_MultipleSheets(t *testing.T) {
+	store, cleanup := setupTestDB(t)
+	defer cleanup()
+	ctx := context.Background()
+
+	// Create multiple books and sheets
+	for i := 1; i <= 3; i++ {
+		title := "Book " + string(rune('0'+i))
+		book, _ := domain.NewBook(title, "Author", "path/"+title, domain.FormatPDF, 100)
+		store.Save(ctx, book)
+
+		sheet, _ := domain.NewReadingSheet(book.ID, title, "Summary for "+title, i, nil, nil)
+		if err := store.SaveSheet(ctx, sheet); err != nil {
+			t.Fatalf("Failed to save sheet %d: %v", i, err)
+		}
+	}
+
+	all, err := store.ListAllSheets(ctx)
+	if err != nil {
+		t.Fatalf("ListAllSheets failed: %v", err)
+	}
+	if len(all) != 3 {
+		t.Errorf("Expected 3 sheets, got %d", len(all))
+	}
+}
+
+func TestReadingSheetRepository_DeleteNonExistent(t *testing.T) {
+	store, cleanup := setupTestDB(t)
+	defer cleanup()
+	ctx := context.Background()
+
+	// Deleting a non-existent sheet should not error
+	err := store.DeleteSheet(ctx, "non-existent-sheet-id")
+	if err != nil {
+		t.Errorf("Expected no error deleting non-existent sheet, got: %v", err)
+	}
+}
+
+// --- BOOK REPOSITORY ADDITIONAL TESTS ---
+
+func TestBookRepository_ListAll_Empty(t *testing.T) {
+	store, cleanup := setupTestDB(t)
+	defer cleanup()
+	ctx := context.Background()
+
+	books, err := store.ListAll(ctx)
+	if err != nil {
+		t.Fatalf("ListAll on empty DB failed: %v", err)
+	}
+	if len(books) != 0 {
+		t.Errorf("Expected 0 books on empty DB, got %d", len(books))
+	}
+}
+
+func TestBookRepository_DeleteNonExistent(t *testing.T) {
+	store, cleanup := setupTestDB(t)
+	defer cleanup()
+	ctx := context.Background()
+
+	// Deleting non-existent book should not error
+	err := store.Delete(ctx, "non-existent-book-id")
+	if err != nil {
+		t.Errorf("Expected no error deleting non-existent book, got: %v", err)
+	}
+}
+
+func TestBookRepository_CascadeDeleteAnnotations(t *testing.T) {
+	store, cleanup := setupTestDB(t)
+	defer cleanup()
+	ctx := context.Background()
+
+	book, _ := domain.NewBook("Cascade Book", "Author", "path", domain.FormatPDF, 100)
+	store.Save(ctx, book)
+
+	// Save annotations linked to the book
+	annot := &domain.Annotation{
+		ID:             "cascade-note",
+		BookID:         book.ID,
+		AnnotationType: domain.AnnotationHighlight,
+		PageNo:         1,
+		CreatedAt:      time.Now(),
+	}
+	store.SaveAnnotation(ctx, annot)
+
+	// Delete the book — FK CASCADE should delete annotations too
+	if err := store.Delete(ctx, book.ID); err != nil {
+		t.Fatalf("Delete book failed: %v", err)
+	}
+
+	// Annotations should be deleted by cascade
+	remaining, err := store.ListAllAnnotationOfABook(ctx, book.ID)
+	if err != nil {
+		t.Fatalf("ListAllAnnotationOfABook failed: %v", err)
+	}
+	if len(remaining) != 0 {
+		t.Errorf("Expected cascade delete to remove annotations, got %d", len(remaining))
+	}
+}

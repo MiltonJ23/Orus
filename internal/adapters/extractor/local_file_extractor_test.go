@@ -258,3 +258,92 @@ func TestChunkLines_Indirect(t *testing.T) {
 		}
 	}
 }
+
+func TestLocalFileExtractor_ExtractInfo_NoExtension(t *testing.T) {
+	ext := extractor.NewLocalFileExtractor()
+	ctx := context.Background()
+
+	// A file with no extension should return ErrUnsupportedFileFormat
+	_, err := ext.ExtractInfo(ctx, "testdata/somefile")
+	if err == nil {
+		t.Fatal("expected error for file with no extension, got nil")
+	}
+	if !errors.Is(err, extractor.ErrUnsupportedFileFormat) {
+		t.Errorf("expected ErrUnsupportedFileFormat, got %v", err)
+	}
+}
+
+func TestLocalFileExtractor_ReadBookText_NoExtension(t *testing.T) {
+	ext := extractor.NewLocalFileExtractor()
+	ctx := context.Background()
+
+	_, err := ext.ReadBookText(ctx, "testdata/somefile")
+	if err == nil {
+		t.Fatal("expected error for file with no extension, got nil")
+	}
+	if !errors.Is(err, extractor.ErrUnsupportedFileFormat) {
+		t.Errorf("expected ErrUnsupportedFileFormat, got %v", err)
+	}
+}
+
+func TestLocalFileExtractor_ExtractPDF_TitleFromFilename(t *testing.T) {
+	ext := extractor.NewLocalFileExtractor()
+
+	// The title should be the filename without extension
+	meta, err := ext.ExtractPDF(filepath.Join("testdata", "dummy.pdf"))
+	if err != nil {
+		t.Fatalf("ExtractPDF failed: %v", err)
+	}
+
+	// Title should not contain the .pdf extension
+	if strings.HasSuffix(meta.Title, ".pdf") {
+		t.Errorf("Title should not contain extension, got: %s", meta.Title)
+	}
+	// Title should not be empty
+	if meta.Title == "" {
+		t.Error("Title should not be empty")
+	}
+}
+
+func TestLocalFileExtractor_ExtractEPUB_Metadata(t *testing.T) {
+	ext := extractor.NewLocalFileExtractor()
+	ctx := context.Background()
+	epubPath := filepath.Join("testdata", "dummy.epub")
+
+	meta, err := ext.ExtractInfo(ctx, epubPath)
+	if err != nil {
+		t.Fatalf("ExtractInfo for EPUB failed: %v", err)
+	}
+
+	// Title should not be empty
+	if meta.Title == "" {
+		t.Error("EPUB title should not be empty")
+	}
+	// Author should not be empty
+	if meta.Author == "" {
+		t.Error("EPUB author should not be empty")
+	}
+	// Format should be EPUB
+	if meta.Format != domain.FormatEPUB {
+		t.Errorf("Expected FormatEPUB, got %v", meta.Format)
+	}
+	// FilePath should match input
+	if meta.FilePath != epubPath {
+		t.Errorf("Expected FilePath %s, got %s", epubPath, meta.FilePath)
+	}
+}
+
+func TestLocalFileExtractor_ImplementsContentReader(t *testing.T) {
+	// Verify the extractor satisfies the ContentReader interface at runtime
+	ext := extractor.NewLocalFileExtractor()
+	if ext == nil {
+		t.Fatal("NewLocalFileExtractor returned nil")
+	}
+	// The compile-time check already ensures this via var _ port.ContentReader = (*LocalFileExtractor)(nil)
+	// but we document the behaviour here
+	ctx := context.Background()
+	_, err := ext.ReadBookText(ctx, filepath.Join("testdata", "dummy.pdf"))
+	if err != nil {
+		t.Errorf("ContentReader.ReadBookText failed: %v", err)
+	}
+}

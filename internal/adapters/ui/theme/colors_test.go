@@ -268,3 +268,80 @@ func TestAlphaBoundaries(t *testing.T) {
 		}
 	})
 }
+
+func TestAllThemeColorsAreDistinct(t *testing.T) {
+	// All named theme colors should have different RGB values to be meaningful design tokens
+	type namedColor struct {
+		name  string
+		color color.NRGBA
+	}
+	colors := []namedColor{
+		{"ColorVoidDark", theme.ColorVoidDark},
+		{"ColorSandGold", theme.ColorSandGold},
+		{"ColorCyberCyan", theme.ColorCyberCyan},
+		{"ColorGlassWhite", theme.ColorGlassWhite},
+		{"ColorPureBlack", theme.ColorPureBlack},
+	}
+
+	for i := 0; i < len(colors); i++ {
+		for j := i + 1; j < len(colors); j++ {
+			a := colors[i]
+			b := colors[j]
+			// Compare RGB (ignore alpha, which is 0xFF for all)
+			if a.color.R == b.color.R && a.color.G == b.color.G && a.color.B == b.color.B {
+				t.Errorf("Colors %s and %s have the same RGB values — they must be distinct design tokens",
+					a.name, b.name)
+			}
+		}
+	}
+}
+
+func TestAllThemeColorsAreOpaque(t *testing.T) {
+	// All default theme color constants should be fully opaque (A == 0xFF)
+	type namedColor struct {
+		name  string
+		color color.NRGBA
+	}
+	colors := []namedColor{
+		{"ColorVoidDark", theme.ColorVoidDark},
+		{"ColorSandGold", theme.ColorSandGold},
+		{"ColorCyberCyan", theme.ColorCyberCyan},
+		{"ColorGlassWhite", theme.ColorGlassWhite},
+		{"ColorPureBlack", theme.ColorPureBlack},
+	}
+
+	for _, nc := range colors {
+		if nc.color.A != 0xFF {
+			t.Errorf("Color %s should be fully opaque (A=0xFF), got A=0x%X", nc.name, nc.color.A)
+		}
+	}
+}
+
+func TestWithAlpha_RGBPreservedForAllThemeColors(t *testing.T) {
+	// Verify WithAlpha preserves RGB for every theme color constant
+	type namedColor struct {
+		name  string
+		color color.NRGBA
+	}
+	themeColors := []namedColor{
+		{"ColorVoidDark", theme.ColorVoidDark},
+		{"ColorSandGold", theme.ColorSandGold},
+		{"ColorCyberCyan", theme.ColorCyberCyan},
+		{"ColorGlassWhite", theme.ColorGlassWhite},
+		{"ColorPureBlack", theme.ColorPureBlack},
+	}
+
+	for _, nc := range themeColors {
+		modified := theme.WithAlpha(nc.color, 100)
+		if modified.R != nc.color.R || modified.G != nc.color.G || modified.B != nc.color.B {
+			t.Errorf("%s: WithAlpha changed RGB values (R:%d->%d G:%d->%d B:%d->%d)",
+				nc.name,
+				nc.color.R, modified.R,
+				nc.color.G, modified.G,
+				nc.color.B, modified.B)
+		}
+		if modified.A != 100 {
+			t.Errorf("%s: WithAlpha did not set alpha to 100, got %d", nc.name, modified.A)
+		}
+	}
+}
