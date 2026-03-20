@@ -236,8 +236,10 @@ func NewWindowManager(
 
 	if reminder != nil {
 		reminder.SetCallback(func(r *domain.Reminder) {
-			wm.activeReminder = r
-			wm.window.Invalidate()
+			wm.uiChan <- func() {
+				wm.activeReminder = r
+				wm.window.Invalidate()
+			}
 		})
 	}
 	return wm
