@@ -4,14 +4,13 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log"
 
 	"github.com/MiltonJ23/Orus/internal/domain"
 	"github.com/MiltonJ23/Orus/internal/port"
 )
 
-var (
-	ErrBookAlreadyExists = errors.New("book already exists")
-)
+var ErrBookAlreadyExists = errors.New("book already exists")
 
 type LibraryService struct {
 	repo      port.BookRepository
@@ -22,27 +21,54 @@ func NewLibraryService(repo port.BookRepository, extractor port.MetadataExtracto
 	return &LibraryService{repo, extractor}
 }
 
-func (l *LibraryService) ImportBook(ctx context.Context, file_path string) (*domain.Book, error) {
-	// Let's extract metadata
-	metadata, extractionError := l.extractor.ExtractInfo(ctx, file_path)
-	if extractionError != nil {
-		return nil, fmt.Errorf("an error occured during book metadata extraction, %v", extractionError)
+// ImportBook imports a single book by file path.
+func (l *LibraryService) ImportBook(ctx context.Context, filePath string) (*domain.Book, error) {
+	log.Printf("[Import] Tentative : %s", filePath)
+
+	metadata, err := l.extractor.ExtractInfo(ctx, filePath)
+	if err != nil {
+		log.Printf("[Import] Echec extraction metadonnees : %v", err)
+		return nil, fmt.Errorf("extraction metadonnees : %w", err)
+	}
+	log.Printf("[Import] Metadonnees OK — titre=%q auteur=%q pages=%d", metadata.Title, metadata.Author, metadata.TotalPages)
+
+	book, err := domain.NewBook(metadata.Title, metadata.Author, metadata.FilePath, metadata.Format, metadata.TotalPages)
+	if err != nil {
+		log.Printf("[Import] Echec creation domaine : %v", err)
+		return nil, fmt.Errorf("creation livre : %w", err)
 	}
 
-	// we use the factory method to create a book
-	book, bookCreationError := domain.NewBook(metadata.Title, metadata.Author, metadata.FilePath, metadata.Format, metadata.TotalPages)
-	if bookCreationError != nil {
-		return nil, fmt.Errorf("an error occured during book creation, %v", bookCreationError)
+	if err := l.repo.Save(ctx, book); err != nil {
+		log.Printf("[Import] Echec sauvegarde BDD : %v", err)
+		return nil, fmt.Errorf("sauvegarde BDD : %w", err)
 	}
 
-	// we save the book to our db
-	savingToDbError := l.repo.Save(ctx, book)
-	if savingToDbError != nil {
-		return nil, fmt.Errorf("an error occured during saving book to database, %v", savingToDbError)
-	}
+	log.Printf("[Import] Succes : %q (id=%s)", book.Title, book.ID)
 	return book, nil
 }
 
+// ImportBooks imports multiple books; returns successes and per-file errors.
+func (l *LibraryService) ImportBooks(ctx context.Context, filePaths []string) ([]*domain.Book, []error) {
+	log.Printf("[Import] %d fichier(s) recu(s)", len(filePaths))
+	var books []*domain.Book
+	var errs []error
+	for _, fp := range filePaths {
+		b, err := l.ImportBook(ctx, fp)
+		if err != nil {
+			errs = append(errs, fmt.Errorf("%s : %w", fp, err))
+		} else {
+			books = append(books, b)
+		}
+	}
+	return books, errs
+}
+
+// GetLibrary returns all books.
 func (l *LibraryService) GetLibrary(ctx context.Context) ([]*domain.Book, error) {
 	return l.repo.ListAll(ctx)
+}
+
+// DeleteBook permanently removes a book.
+func (l *LibraryService) DeleteBook(ctx context.Context, bookID string) error {
+	return l.repo.Delete(ctx, bookID)
 }
