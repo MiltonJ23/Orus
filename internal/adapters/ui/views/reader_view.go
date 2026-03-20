@@ -255,18 +255,18 @@ func (wm *WindowManager) drawReaderTopBar(gtx layout.Context) layout.Dimensions 
 			// Controls row
 			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 				return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx,
-					// dim group
+					// DIM group
 					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 						if wm.dimPlusBtn.Clicked(gtx) && wm.readerDimAlpha < 200 {
 							wm.readerDimAlpha += 20
 						}
-						return wm.readerIconPill(gtx, "🌙+", &wm.dimPlusBtn)
+						return wm.readerIconPill(gtx, "B+", &wm.dimPlusBtn)
 					}),
 					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 						if wm.dimMinusBtn.Clicked(gtx) && wm.readerDimAlpha >= 20 {
 							wm.readerDimAlpha -= 20
 						}
-						return wm.readerIconPill(gtx, "🌙−", &wm.dimMinusBtn)
+						return wm.readerIconPill(gtx, "B-", &wm.dimMinusBtn)
 					}),
 					layout.Rigid(layout.Spacer{Width: unit.Dp(6)}.Layout),
 					// font group
@@ -274,7 +274,7 @@ func (wm *WindowManager) drawReaderTopBar(gtx layout.Context) layout.Dimensions 
 						if wm.fontMinusBtn.Clicked(gtx) && wm.readerFontSize > 11 {
 							wm.readerFontSize -= 1.5
 						}
-						return wm.readerIconPill(gtx, "A−", &wm.fontMinusBtn)
+						return wm.readerIconPill(gtx, "A-", &wm.fontMinusBtn)
 					}),
 					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 						if wm.fontPlusBtn.Clicked(gtx) && wm.readerFontSize < 32 {
@@ -289,7 +289,7 @@ func (wm *WindowManager) drawReaderTopBar(gtx layout.Context) layout.Dimensions 
 							wm.readerBgPanelOpen = !wm.readerBgPanelOpen
 						}
 						active := wm.readerBgPanelOpen
-						return wm.readerIconPillActive(gtx, "🎨", &wm.readerBgPanelBtn, active)
+						return wm.readerIconPillActive(gtx, "BG", &wm.readerBgPanelBtn, active)
 					}),
 				)
 			}),
@@ -315,71 +315,103 @@ func (wm *WindowManager) drawReaderContent(gtx layout.Context) layout.Dimensions
 		})
 	}
 
-	pageText := wm.readerContent[wm.readerPage]
-	// Clean raw text: normalize whitespace, collapse runs of blank lines
-	pageText = cleanReaderText(pageText)
-
-	// Detect if this page starts with a chapter marker
+	// Reset scroll when page changes
+	pageText := cleanReaderText(wm.readerContent[wm.readerPage])
 	isChapter, chapterLabel, bodyText := parseChapterHeader(pageText)
 
+	maxW := gtx.Constraints.Max.X - 160
+	if maxW > 680 {
+		maxW = 680
+	}
+	if maxW < 300 {
+		maxW = 300
+	}
+
+	// Scrollable content column
+	wm.readerScrollList.List.Axis = layout.Vertical
 	return layout.Center.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-		maxW := 680
-		if gtx.Constraints.Max.X-80 < maxW {
-			maxW = gtx.Constraints.Max.X - 80
-		}
 		gtx.Constraints.Max.X = maxW
 		gtx.Constraints.Min.X = maxW
 
-		return layout.Inset{Top: unit.Dp(44), Bottom: unit.Dp(32)}.Layout(gtx,
-			func(gtx layout.Context) layout.Dimensions {
-				if !isChapter {
-					// Plain body text
-					lbl := material.Label(wm.theme, unit.Sp(wm.readerFontSize), pageText)
-					lbl.Color = textCol
-					lbl.LineHeight = unit.Sp(wm.readerFontSize * 1.65)
-					return lbl.Layout(gtx)
-				}
-				// Chapter header + body
-				return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
-					// Chapter label — small uppercase, accent colour
-					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-						return layout.Inset{Bottom: unit.Dp(6)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-							lbl := material.Label(wm.theme, unit.Sp(11), chapterLabel)
-							lbl.Color = theme.WithAlpha(textCol, 120)
-							lbl.Font.Weight = font.Bold
-							return lbl.Layout(gtx)
-						})
-					}),
-					// Hairline separator
-					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-						return layout.Inset{Bottom: unit.Dp(28)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-							line := clip.Rect{Max: image.Pt(maxW, 1)}.Push(gtx.Ops)
-							paint.Fill(gtx.Ops, theme.WithAlpha(textCol, 30))
-							line.Pop()
-							return layout.Dimensions{Size: image.Pt(maxW, 1)}
-						})
-					}),
-					// Body
-					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-						lbl := material.Label(wm.theme, unit.Sp(wm.readerFontSize), bodyText)
+		if !isChapter {
+			// Single scrollable text block
+			return material.List(wm.theme, &wm.readerScrollList).Layout(gtx, 1,
+				func(gtx layout.Context, _ int) layout.Dimensions {
+					return layout.Inset{Top: unit.Dp(44), Bottom: unit.Dp(32)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+						lbl := material.Label(wm.theme, unit.Sp(wm.readerFontSize), pageText)
 						lbl.Color = textCol
-						lbl.LineHeight = unit.Sp(wm.readerFontSize * 1.65)
+						lbl.LineHeight = unit.Sp(wm.readerFontSize * 1.7)
 						return lbl.Layout(gtx)
-					}),
-				)
+					})
+				})
+		}
+
+		// Chapter header + scrollable body
+		return material.List(wm.theme, &wm.readerScrollList).Layout(gtx, 1,
+			func(gtx layout.Context, _ int) layout.Dimensions {
+				return layout.Inset{Top: unit.Dp(52), Bottom: unit.Dp(32)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+					return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
+						// Chapter label
+						layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+							return layout.Inset{Bottom: unit.Dp(8)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+								lbl := material.Label(wm.theme, unit.Sp(11), chapterLabel)
+								lbl.Color = theme.WithAlpha(textCol, 110)
+								lbl.Font.Weight = font.Bold
+								return lbl.Layout(gtx)
+							})
+						}),
+						// Hairline
+						layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+							return layout.Inset{Bottom: unit.Dp(32)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+								line := clip.Rect{Max: image.Pt(maxW, 1)}.Push(gtx.Ops)
+								paint.Fill(gtx.Ops, theme.WithAlpha(textCol, 28))
+								line.Pop()
+								return layout.Dimensions{Size: image.Pt(maxW, 1)}
+							})
+						}),
+						// Body text
+						layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+							lbl := material.Label(wm.theme, unit.Sp(wm.readerFontSize), bodyText)
+							lbl.Color = textCol
+							lbl.LineHeight = unit.Sp(wm.readerFontSize * 1.7)
+							return lbl.Layout(gtx)
+						}),
+					)
+				})
 			})
 	})
 }
 
 // cleanReaderText normalises raw extracted text for comfortable reading.
+// - Collapses 3+ blank lines into 2
+// - Removes consecutive duplicate lines (PDF extraction artefact)
+// - Strips trailing/leading whitespace per line
 func cleanReaderText(s string) string {
-	// Replace literal \n sequences (if any escaped) with newlines
 	s = strings.ReplaceAll(s, `\n`, "\n")
-	// Collapse 3+ consecutive newlines into 2
-	for strings.Contains(s, "\n\n\n") {
-		s = strings.ReplaceAll(s, "\n\n\n", "\n\n")
+	lines := strings.Split(s, "\n")
+
+	out := make([]string, 0, len(lines))
+	prev := "\x00" // sentinel
+	blankRun := 0
+	for _, raw := range lines {
+		line := strings.TrimRight(raw, " \t")
+		if line == "" {
+			blankRun++
+			if blankRun <= 2 {
+				out = append(out, "")
+			}
+			prev = ""
+			continue
+		}
+		blankRun = 0
+		// Skip exact consecutive duplicate (PDF double-renders headings)
+		if line == prev {
+			continue
+		}
+		out = append(out, line)
+		prev = line
 	}
-	return strings.TrimSpace(s)
+	return strings.TrimSpace(strings.Join(out, "\n"))
 }
 
 // parseChapterHeader detects lines like "— Chapitre N —" or "Chapter N" at the

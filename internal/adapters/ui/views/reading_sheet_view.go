@@ -8,6 +8,7 @@ import (
 	"log"
 	"os/exec"
 	"runtime"
+	"strconv"
 	"strings"
 
 	"gioui.org/f32"
@@ -30,7 +31,9 @@ type sheetFormState struct {
 	summaryEditor widget.Editor
 	quoteEditor   widget.Editor
 	tagsEditor    widget.Editor
-	ratingEditor  widget.Editor
+	ratingEditor  widget.Editor // kept for text fallback, but starBtns take priority
+	starBtns      [5]widget.Clickable
+	pendingRating int              // 0..5, set by clicking stars
 	submitBtn     widget.Clickable // "Enregistrer la fiche"
 	openBtn       widget.Clickable // "+ Nouvelle fiche"
 	cancelBtn     widget.Clickable // "← Retour" from create view
@@ -90,6 +93,7 @@ func (wm *WindowManager) drawSheetListPage(gtx layout.Context) layout.Dimensions
 							wm.sheetForm.quoteEditor.SetText("")
 							wm.sheetForm.tagsEditor.SetText("")
 							wm.sheetForm.ratingEditor.SetText("")
+							wm.sheetForm.pendingRating = 0
 						}
 						return wm.drawPillButton(gtx, "+ Nouvelle fiche", &wm.sheetForm.submitBtn, theme.ColorCyberCyan)
 					}),
@@ -149,12 +153,12 @@ func (wm *WindowManager) drawSheetListPage(gtx layout.Context) layout.Dimensions
 	)
 }
 
-// drawSheetCard — beautiful horizontal card with colored left accent.
+// drawSheetCard — a beautiful horizontal card with a colored left accent.
 func (wm *WindowManager) drawSheetCard(gtx layout.Context, s *domain.ReadingSheet, btnIdx int) layout.Dimensions {
 	for len(wm.sheetDetailBtns) <= btnIdx {
 		wm.sheetDetailBtns = append(wm.sheetDetailBtns, widget.Clickable{})
 	}
-	// Derive accent color from book index
+	// Derive accent color from the book index
 	bookIdx := sheetBookIdx(wm.books, s.BookTitle)
 	accentCol := coverPalette[bookIdx%len(coverPalette)]
 
@@ -332,8 +336,7 @@ func (wm *WindowManager) drawSheetCreatePage(gtx layout.Context) layout.Dimensio
 						})
 					}),
 					layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
-						return wm.drawSheetFieldArea(gtx, "NOTE /5",
-							&wm.sheetForm.ratingEditor, "0–5", 48)
+						return wm.drawStarRatingPicker(gtx)
 					}),
 				)
 			})
@@ -524,6 +527,57 @@ func (wm *WindowManager) drawBookPickerGrid(gtx layout.Context) layout.Dimension
 }
 
 // drawSheetFieldArea draws a labeled text-input area.
+// drawStarRatingPicker renders 5 clickable stars for sheet rating.
+func (wm *WindowManager) drawStarRatingPicker(gtx layout.Context) layout.Dimensions {
+	return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
+		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+			lbl := material.Label(wm.theme, unit.Sp(11), "NOTE")
+			lbl.Font.Weight = font.Bold
+			lbl.Color = theme.WithAlpha(theme.ColorPureBlack, 110)
+			return layout.Inset{Bottom: unit.Dp(10)}.Layout(gtx, lbl.Layout)
+		}),
+		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+			var stars []layout.FlexChild
+			for i := 0; i < 5; i++ {
+				idx := i + 1
+				stars = append(stars, layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+					if wm.sheetForm.starBtns[idx-1].Clicked(gtx) {
+						wm.sheetForm.pendingRating = idx
+					}
+					filled := idx <= wm.sheetForm.pendingRating
+					hovered := wm.sheetForm.starBtns[idx-1].Hovered()
+					return wm.sheetForm.starBtns[idx-1].Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+						var starCol color.NRGBA
+						if filled {
+							starCol = theme.ColorSandGold
+						} else if hovered {
+							starCol = theme.WithAlpha(theme.ColorSandGold, 140)
+						} else {
+							starCol = theme.WithAlpha(theme.ColorPureBlack, 55)
+						}
+						return layout.Inset{Right: unit.Dp(4)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+							lbl := material.Label(wm.theme, unit.Sp(26), "★")
+							lbl.Color = starCol
+							return lbl.Layout(gtx)
+						})
+					})
+				}))
+			}
+			return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx, stars...)
+		}),
+		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+			if wm.sheetForm.pendingRating == 0 {
+				return layout.Dimensions{}
+			}
+			return layout.Inset{Top: unit.Dp(6)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+				lbl := material.Label(wm.theme, unit.Sp(12), fmt.Sprintf("%d / 5", wm.sheetForm.pendingRating))
+				lbl.Color = theme.WithAlpha(theme.ColorPureBlack, 120)
+				return lbl.Layout(gtx)
+			})
+		}),
+	)
+}
+
 func (wm *WindowManager) drawSheetFieldArea(gtx layout.Context, label string, ed *widget.Editor, hint string, minH int) layout.Dimensions {
 	return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
 		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
@@ -597,7 +651,7 @@ func (wm *WindowManager) drawSheetDetailPage(gtx layout.Context) layout.Dimensio
 
 				// ── Hero header block ─────────────────────────────────────────
 				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-					// Full-width 3px accent bar at very top of hero
+					// Full-width 3px accent bar at the very top of hero
 					bar := clip.Rect{Max: image.Pt(W, 3)}.Push(gtx.Ops)
 					paint.Fill(gtx.Ops, accentCol)
 					bar.Pop()
@@ -884,17 +938,6 @@ func (wm *WindowManager) drawSolidPillBtn(gtx layout.Context, label string, btn 
 	})
 }
 
-// darkenColor darkens a color by the given factor (0=same, 1=black).
-func darkenColor(col color.NRGBA, factor float32) color.NRGBA {
-	f := 1 - factor
-	return color.NRGBA{
-		R: uint8(float32(col.R) * f),
-		G: uint8(float32(col.G) * f),
-		B: uint8(float32(col.B) * f),
-		A: col.A,
-	}
-}
-
 // =============================================================================
 // FILTER BAR
 // =============================================================================
@@ -1032,8 +1075,17 @@ func (wm *WindowManager) submitNewSheet() {
 	if quoteRaw != "" {
 		quotes = []string{quoteRaw}
 	}
+	// Use star picker rating; fall back to parsing text editor if needed
+	rating := wm.sheetForm.pendingRating
+	if rating == 0 {
+		if r, err := strconv.Atoi(strings.TrimSpace(wm.sheetForm.ratingEditor.Text())); err == nil {
+			if r >= 1 && r <= 5 {
+				rating = r
+			}
+		}
+	}
 	go func() {
-		_, err := wm.sheetSvc.CreateSheet(context.Background(), book.ID, summary, 0, quotes, tags)
+		_, err := wm.sheetSvc.CreateSheet(context.Background(), book.ID, summary, rating, quotes, tags)
 		if err != nil {
 			log.Printf("[Sheets] CreateSheet: %v", err)
 			return
@@ -1174,7 +1226,7 @@ func urlEncode(s string) string {
 			b.WriteRune(c)
 		default:
 			for _, by := range []byte(string(c)) {
-				fmt.Fprintf(&b, "%%%02X", by)
+				_, _ = fmt.Fprintf(&b, "%%%02X", by)
 			}
 		}
 	}

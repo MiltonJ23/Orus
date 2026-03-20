@@ -147,23 +147,29 @@ type WindowManager struct {
 	bookCardAnimStart  time.Time
 	bookCardAnimProg   float32 // 0..1
 
+	// uiChan carries UI-state mutations from goroutines to the main render loop.
+	// All writes to WindowManager fields MUST go through this channel to avoid
+	// data races with Gio's single-threaded frame model.
+	uiChan chan func()
+
 	// Reader
-	readerOpenedAt time.Time
-	readerActive   bool
-	readerBook     *domain.Book
-	readerSession  *domain.ReadingSession // live session for progress saving
-	readerContent  []string
-	readerPage     int
-	readerFontSize float32
-	readerDimAlpha uint8
-	readerLoading  bool
-	closeReaderBtn widget.Clickable
-	fontPlusBtn    widget.Clickable
-	fontMinusBtn   widget.Clickable
-	dimPlusBtn     widget.Clickable
-	dimMinusBtn    widget.Clickable
-	readerPrevBtn  widget.Clickable
-	readerNextBtn  widget.Clickable
+	readerOpenedAt   time.Time
+	readerScrollList widget.List // vertical scroll within a reader page
+	readerActive     bool
+	readerBook       *domain.Book
+	readerSession    *domain.ReadingSession // live session for progress saving
+	readerContent    []string
+	readerPage       int
+	readerFontSize   float32
+	readerDimAlpha   uint8
+	readerLoading    bool
+	closeReaderBtn   widget.Clickable
+	fontPlusBtn      widget.Clickable
+	fontMinusBtn     widget.Clickable
+	dimPlusBtn       widget.Clickable
+	dimMinusBtn      widget.Clickable
+	readerPrevBtn    widget.Clickable
+	readerNextBtn    widget.Clickable
 
 	// Reader background (color palette + XMB animated mode)
 	// Mode: 0=light 1=dark 2=xmb 3..9=preset colors
@@ -225,6 +231,7 @@ func NewWindowManager(
 		activeBookCardIdx:     -1,
 		overlayReadBtns:       []widget.Clickable{},
 		readerBgMode:          0,
+		uiChan:                make(chan func(), 128),
 	}
 
 	if reminder != nil {
@@ -244,6 +251,15 @@ func (wm *WindowManager) Run() error {
 		case app.DestroyEvent:
 			return e.Err
 		case app.FrameEvent:
+			// Drain all pending UI mutations from goroutines — runs on main thread.
+			for drained := false; !drained; {
+				select {
+				case fn := <-wm.uiChan:
+					fn()
+				default:
+					drained = true
+				}
+			}
 			gtx := app.NewContext(&ops, e)
 			elapsed := time.Since(wm.appStartTime).Seconds()
 			if wm.state == StateSplash && elapsed > 6.5 {
@@ -1249,10 +1265,12 @@ func (wm *WindowManager) computeMetrics() (bestDay, bestHour string, sessions []
 		return "—", "—", nil
 	}
 	daysCount := make(map[time.Weekday]int)
-	hoursCount := make(map[int]int)
+	// For "heure de prédilection": weight by pages read in each session,
+	// not just session count — reflects actual productivity, not just presence.
+	hoursPages := make(map[int]int)
 	for _, s := range sessions {
 		daysCount[s.LastReadingTime.Weekday()]++
-		hoursCount[s.LastReadingTime.Hour()]++
+		hoursPages[s.LastReadingTime.Hour()] += s.CurrentPage
 	}
 	var maxDay time.Weekday
 	maxDC := 0
@@ -1262,10 +1280,10 @@ func (wm *WindowManager) computeMetrics() (bestDay, bestHour string, sessions []
 			maxDay = d
 		}
 	}
-	var maxHour, maxHC int
-	for h, c := range hoursCount {
-		if c > maxHC {
-			maxHC = c
+	var maxHour, maxHP int
+	for h, p := range hoursPages {
+		if p > maxHP {
+			maxHP = p
 			maxHour = h
 		}
 	}
@@ -1275,7 +1293,12 @@ func (wm *WindowManager) computeMetrics() (bestDay, bestHour string, sessions []
 		time.Friday: "Vendredi", time.Saturday: "Samedi",
 	}
 	bestDay = frDays[maxDay]
-	bestHour = fmt.Sprintf("%dh00 — %dh00", maxHour, maxHour+2)
+	// Show a clean 2-hour window label
+	endH := maxHour + 2
+	if endH > 23 {
+		endH = 23
+	}
+	bestHour = fmt.Sprintf("%02dh — %02dh", maxHour, endH)
 	sort.Slice(sessions, func(i, j int) bool {
 		return sessions[i].LastReadingTime.After(sessions[j].LastReadingTime)
 	})
@@ -1474,29 +1497,32 @@ func (wm *WindowManager) matchesSearch(b *domain.Book) bool {
 }
 
 // saveReaderProgress persists the current page via TrackerService in a goroutine.
+// UI state mutations are dispatched through uiChan to the main thread — no data races.
 func (wm *WindowManager) saveReaderProgress() {
 	if wm.trackSvc == nil || wm.readerSession == nil {
 		return
 	}
 	ses := wm.readerSession
 	book := wm.readerBook
-	page := wm.readerPage + 1 // domain uses 1-indexed pages
+	page := wm.readerPage + 1
+	openedAt := wm.readerOpenedAt // capture before goroutine
 	go func() {
 		_ = wm.trackSvc.UpdateProgress(context.Background(), page, ses)
-		// Invalidate dependent caches
-		wm.dashboardLoaded = false
-		wm.metricsLoaded = false
-		wm.bookStatusLoaded = false
-		// Show achievement if book just completed — never re-show after dismiss
-		if ses.IsBookComplete() && book != nil && wm.achievementBook == nil {
-			if wm.dismissedAchievements == nil {
-				wm.dismissedAchievements = make(map[string]bool)
-			}
-			if !wm.dismissedAchievements[book.ID] {
-				wm.achievementBook = book
-				wm.achievementReadMin = int(time.Since(wm.readerOpenedAt).Minutes())
-				wm.confettiStart = time.Now()
-				wm.confettiActive = true
+		// All UI mutations sent to main thread via buffered channel
+		wm.uiChan <- func() {
+			wm.dashboardLoaded = false
+			wm.metricsLoaded = false
+			wm.bookStatusLoaded = false
+			if ses.IsBookComplete() && book != nil && wm.achievementBook == nil {
+				if wm.dismissedAchievements == nil {
+					wm.dismissedAchievements = make(map[string]bool)
+				}
+				if !wm.dismissedAchievements[book.ID] {
+					wm.achievementBook = book
+					wm.achievementReadMin = int(time.Since(openedAt).Minutes())
+					wm.confettiStart = time.Now()
+					wm.confettiActive = true
+				}
 			}
 		}
 		wm.window.Invalidate()
