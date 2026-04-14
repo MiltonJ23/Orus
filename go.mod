@@ -3,17 +3,17 @@ module github.com/MiltonJ23/Orus
 go 1.25.3
 
 require (
+	gioui.org v0.9.0
 	github.com/google/uuid v1.6.0
+	github.com/kapmahc/epub v0.1.1
+	github.com/ledongthuc/pdf v0.0.0-20250511090121-5959a4027728
 	modernc.org/sqlite v1.46.0
 )
 
 require (
-	gioui.org v0.9.0 // indirect
 	gioui.org/shader v1.0.8 // indirect
 	github.com/dustin/go-humanize v1.0.1 // indirect
 	github.com/go-text/typesetting v0.3.0 // indirect
-	github.com/kapmahc/epub v0.1.1 // indirect
-	github.com/ledongthuc/pdf v0.0.0-20250511090121-5959a4027728 // indirect
 	github.com/mattn/go-isatty v0.0.20 // indirect
 	github.com/ncruces/go-strftime v1.0.0 // indirect
 	github.com/remyoudompheng/bigfft v0.0.0-20230129092748-24d4a6f8daec // indirect
