@@ -13,7 +13,11 @@ import (
 	"github.com/MiltonJ23/Orus/internal/service"
 )
 
+// version is set at build time via -ldflags "-X main.version=..."
+var version = "dev"
+
 func main() {
+	log.Printf("Orus %s", version)
 	dbPath := filepath.Join(".", "orus.db")
 	store, err := sqlite.NewStorage(dbPath)
 	if err != nil {

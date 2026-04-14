@@ -9,9 +9,33 @@ permissions:
   contents: write
 
 jobs:
-  release:
-    name: Build and Release
-    runs-on: ubuntu-latest
+  build:
+    name: Build (${{ matrix.goos }}/${{ matrix.goarch }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            goos: linux
+            goarch: amd64
+            ext: ""
+            cgo: "1"
+          - os: macos-13
+            goos: darwin
+            goarch: amd64
+            ext: ""
+            cgo: "1"
+          - os: macos-latest
+            goos: darwin
+            goarch: arm64
+            ext: ""
+            cgo: "1"
+          - os: windows-latest
+            goos: windows
+            goarch: amd64
+            ext: ".exe"
+            cgo: "0"
+    runs-on: ${{ matrix.os }}
 
     steps:
       - name: Checkout
@@ -25,9 +49,12 @@ jobs:
           go-version-file: go.mod
 
       - name: Install Linux dependencies
+        if: runner.os == 'Linux'
         run: |
           sudo apt-get update
-          sudo apt-get install -y libwayland-dev libxkbcommon-dev libgles2-mesa-dev
+          sudo apt-get install -y libwayland-dev libxkbcommon-dev libgles2-mesa-dev \
+            libvulkan-dev libxkbcommon-x11-dev libx11-xcb-dev libxcursor-dev \
+            libxfixes-dev libegl-dev
 
       - name: Download modules
         run: go mod download
@@ -37,31 +64,46 @@ jobs:
 
       - name: Extract version
         id: version
+        shell: bash
         run: echo "tag=${GITHUB_REF#refs/tags/}" >> "$GITHUB_OUTPUT"
 
-      - name: Build binaries
+      - name: Build
+        env:
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+          CGO_ENABLED: ${{ matrix.cgo }}
+        shell: bash
         run: |
           mkdir -p dist
+          go build -ldflags="-s -w -X main.version=${{ steps.version.outputs.tag }}" \
+            -o dist/orus-${{ matrix.goos }}-${{ matrix.goarch }}${{ matrix.ext }} ./cmd/orus/
 
-          # Linux amd64
-          GOOS=linux GOARCH=amd64 CGO_ENABLED=0 \
-            go build -ldflags="-s -w -X main.version=${{ steps.version.outputs.tag }}" \
-            -o dist/orus-linux-amd64 ./cmd/orus/
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: orus-${{ matrix.goos }}-${{ matrix.goarch }}
+          path: dist/orus-*
 
-          # macOS amd64
-          GOOS=darwin GOARCH=amd64 CGO_ENABLED=0 \
-            go build -ldflags="-s -w -X main.version=${{ steps.version.outputs.tag }}" \
-            -o dist/orus-darwin-amd64 ./cmd/orus/
+  release:
+    name: Create Release
+    needs: build
+    runs-on: ubuntu-latest
 
-          # macOS arm64
-          GOOS=darwin GOARCH=arm64 CGO_ENABLED=0 \
-            go build -ldflags="-s -w -X main.version=${{ steps.version.outputs.tag }}" \
-            -o dist/orus-darwin-arm64 ./cmd/orus/
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
-          # Windows amd64
-          GOOS=windows GOARCH=amd64 CGO_ENABLED=0 \
-            go build -ldflags="-s -w -X main.version=${{ steps.version.outputs.tag }}" \
-            -o dist/orus-windows-amd64.exe ./cmd/orus/
+      - name: Extract version
+        id: version
+        run: echo "tag=${GITHUB_REF#refs/tags/}" >> "$GITHUB_OUTPUT"
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
 
       - name: Create checksums
         working-directory: dist

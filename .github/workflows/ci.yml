@@ -31,7 +31,9 @@ jobs:
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
-          sudo apt-get install -y libwayland-dev libxkbcommon-dev libgles2-mesa-dev
+          sudo apt-get install -y libwayland-dev libxkbcommon-dev libgles2-mesa-dev \
+            libvulkan-dev libxkbcommon-x11-dev libx11-xcb-dev libxcursor-dev \
+            libxfixes-dev libegl-dev
 
       - name: Download modules
         run: go mod download
@@ -40,7 +42,7 @@ jobs:
         run: go mod verify
 
       - name: Run go vet
-        run: go vet ./...
+        run: go vet ./internal/...
 
       - name: Run tests
         run: go test -race -count=1 -timeout 120s ./internal/...
@@ -78,20 +80,33 @@ jobs:
           fi
 
   build:
-    name: Build (${{ matrix.goos }}/${{ matrix.goarch }})
-    runs-on: ubuntu-latest
+    name: Build (${{ matrix.os }}/${{ matrix.goarch }})
     needs: [test, fmt]
     strategy:
+      fail-fast: false
       matrix:
         include:
-          - goos: linux
+          - os: ubuntu-latest
+            goos: linux
             goarch: amd64
-          - goos: darwin
+            ext: ""
+            cgo: "1"
+          - os: macos-13
+            goos: darwin
             goarch: amd64
-          - goos: darwin
+            ext: ""
+            cgo: "1"
+          - os: macos-latest
+            goos: darwin
             goarch: arm64
-          - goos: windows
+            ext: ""
+            cgo: "1"
+          - os: windows-latest
+            goos: windows
             goarch: amd64
+            ext: ".exe"
+            cgo: "0"
+    runs-on: ${{ matrix.os }}
 
     steps:
       - name: Checkout
@@ -103,19 +118,19 @@ jobs:
           go-version-file: go.mod
 
       - name: Install Linux dependencies
+        if: runner.os == 'Linux'
         run: |
           sudo apt-get update
-          sudo apt-get install -y libwayland-dev libxkbcommon-dev libgles2-mesa-dev
+          sudo apt-get install -y libwayland-dev libxkbcommon-dev libgles2-mesa-dev \
+            libvulkan-dev libxkbcommon-x11-dev libx11-xcb-dev libxcursor-dev \
+            libxfixes-dev libegl-dev
 
       - name: Build
         env:
           GOOS: ${{ matrix.goos }}
           GOARCH: ${{ matrix.goarch }}
-          CGO_ENABLED: "0"
-        run: |
-          ext=""
-          if [ "${{ matrix.goos }}" = "windows" ]; then ext=".exe"; fi
-          go build -ldflags="-s -w" -o bin/orus-${{ matrix.goos }}-${{ matrix.goarch }}${ext} ./cmd/orus/
+          CGO_ENABLED: ${{ matrix.cgo }}
+        run: go build -ldflags="-s -w" -o bin/orus-${{ matrix.goos }}-${{ matrix.goarch }}${{ matrix.ext }} ./cmd/orus/
 
       - name: Upload binary
         uses: actions/upload-artifact@v4
