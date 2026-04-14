@@ -4,6 +4,12 @@ on:
   push:
     tags:
       - "v*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag (e.g. v0.1.0)"
+        required: true
+        type: string
 
 permissions:
   contents: write
@@ -65,7 +71,12 @@ jobs:
       - name: Extract version
         id: version
         shell: bash
-        run: echo "tag=${GITHUB_REF#refs/tags/}" >> "$GITHUB_OUTPUT"
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "tag=${{ github.event.inputs.tag }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "tag=${GITHUB_REF#refs/tags/}" >> "$GITHUB_OUTPUT"
+          fi
 
       - name: Build
         env:
@@ -78,11 +89,27 @@ jobs:
           go build -ldflags="-s -w -X main.version=${{ steps.version.outputs.tag }}" \
             -o dist/orus-${{ matrix.goos }}-${{ matrix.goarch }}${{ matrix.ext }} ./cmd/orus/
 
+      # Ad-hoc code sign macOS binaries with hardened runtime for Gatekeeper/Tahoe
+      - name: Sign macOS binary
+        if: runner.os == 'macOS'
+        run: |
+          codesign --force --options runtime --sign - dist/orus-${{ matrix.goos }}-${{ matrix.goarch }}
+          codesign --verify --verbose dist/orus-${{ matrix.goos }}-${{ matrix.goarch }}
+
+      # Create zip for macOS to preserve executable permissions and Gatekeeper metadata
+      - name: Package macOS binary
+        if: runner.os == 'macOS'
+        run: |
+          cd dist
+          ditto -c -k --keepParent orus-${{ matrix.goos }}-${{ matrix.goarch }} orus-${{ matrix.goos }}-${{ matrix.goarch }}.zip
+
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: orus-${{ matrix.goos }}-${{ matrix.goarch }}
-          path: dist/orus-*
+          path: |
+            dist/orus-${{ matrix.goos }}-${{ matrix.goarch }}${{ matrix.ext }}
+            dist/orus-${{ matrix.goos }}-${{ matrix.goarch }}.zip
 
   release:
     name: Create Release
@@ -97,13 +124,29 @@ jobs:
 
       - name: Extract version
         id: version
-        run: echo "tag=${GITHUB_REF#refs/tags/}" >> "$GITHUB_OUTPUT"
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "tag=${{ github.event.inputs.tag }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "tag=${GITHUB_REF#refs/tags/}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Create tag for manual dispatch
+        if: github.event_name == 'workflow_dispatch'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git tag -a "${{ steps.version.outputs.tag }}" -m "Release ${{ steps.version.outputs.tag }}"
+          git push origin "${{ steps.version.outputs.tag }}"
 
       - name: Download all artifacts
         uses: actions/download-artifact@v4
         with:
           path: dist
           merge-multiple: true
+
+      - name: List downloaded artifacts
+        run: ls -lhR dist/
 
       - name: Create checksums
         working-directory: dist
@@ -130,28 +173,55 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ steps.version.outputs.tag }}
-          name: Orus ${{ steps.version.outputs.tag }}
+          name: "🦉 Orus ${{ steps.version.outputs.tag }}"
           body: |
-            ## Orus ${{ steps.version.outputs.tag }}
+            ## 🦉 Orus ${{ steps.version.outputs.tag }}
 
             ### Changes
             ${{ steps.changelog.outputs.body }}
 
-            ### Downloads
+            ---
 
-            | Platform | Architecture | Binary |
-            |----------|-------------|--------|
-            | Linux | x86_64 | `orus-linux-amd64` |
-            | macOS | x86_64 | `orus-darwin-amd64` |
-            | macOS | ARM64 | `orus-darwin-arm64` |
-            | Windows | x86_64 | `orus-windows-amd64.exe` |
+            ### 📥 Downloads
 
-            ### Checksums
-            See `checksums.txt` for SHA-256 verification.
+            | Platform | Architecture | File | Notes |
+            |----------|-------------|------|-------|
+            | 🍎 macOS | Intel (x86_64) | [`orus-darwin-amd64.zip`](https://github.com/${{ github.repository }}/releases/download/${{ steps.version.outputs.tag }}/orus-darwin-amd64.zip) | Compatible macOS Tahoe+ |
+            | 🍎 macOS | Apple Silicon (ARM64) | [`orus-darwin-arm64.zip`](https://github.com/${{ github.repository }}/releases/download/${{ steps.version.outputs.tag }}/orus-darwin-arm64.zip) | Compatible macOS Tahoe+ |
+            | 🐧 Linux | x86_64 | [`orus-linux-amd64`](https://github.com/${{ github.repository }}/releases/download/${{ steps.version.outputs.tag }}/orus-linux-amd64) | |
+            | 🪟 Windows | x86_64 | [`orus-windows-amd64.exe`](https://github.com/${{ github.repository }}/releases/download/${{ steps.version.outputs.tag }}/orus-windows-amd64.exe) | |
+
+            ---
+
+            ### 🍎 Instructions macOS (Tahoe & versions récentes)
+
+            Les binaires macOS sont signés ad-hoc avec le hardened runtime.
+            Après le téléchargement, si macOS bloque l'exécution :
+
+            1. **Décompressez** le fichier `.zip`
+            2. Ouvrez le **Terminal** et exécutez :
+               ```bash
+               xattr -cr ~/Downloads/orus-darwin-amd64
+               chmod +x ~/Downloads/orus-darwin-amd64
+               ./orus-darwin-amd64
+               ```
+            3. Ou faites **clic droit → Ouvrir** sur le binaire dans le Finder
+
+            > **Note :** Les fichiers `.zip` sont créés avec `ditto` pour préserver les attributs macOS.
+
+            ---
+
+            ### ✅ Vérification d'intégrité (SHA-256)
+            Vérifiez l'intégrité de votre téléchargement :
+            ```bash
+            sha256sum -c checksums.txt
+            ```
           files: |
             dist/orus-linux-amd64
             dist/orus-darwin-amd64
+            dist/orus-darwin-amd64.zip
             dist/orus-darwin-arm64
+            dist/orus-darwin-arm64.zip
             dist/orus-windows-amd64.exe
             dist/checksums.txt
           draft: false
