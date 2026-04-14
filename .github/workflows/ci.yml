@@ -41,6 +41,8 @@ jobs:
       - name: Verify module checksums
         run: go mod verify
 
+      # Only vet ./internal/... — cmd/orus requires native Gio UI libraries
+      # that are not available in all environments
       - name: Run go vet
         run: go vet ./internal/...
 
@@ -131,6 +133,13 @@ jobs:
           GOARCH: ${{ matrix.goarch }}
           CGO_ENABLED: ${{ matrix.cgo }}
         run: go build -ldflags="-s -w" -o bin/orus-${{ matrix.goos }}-${{ matrix.goarch }}${{ matrix.ext }} ./cmd/orus/
+
+      # Ad-hoc code sign macOS binaries for Gatekeeper compatibility (Tahoe+)
+      - name: Sign macOS binary
+        if: runner.os == 'macOS'
+        run: |
+          codesign --force --options runtime --sign - bin/orus-${{ matrix.goos }}-${{ matrix.goarch }}
+          codesign --verify --verbose bin/orus-${{ matrix.goos }}-${{ matrix.goarch }}
 
       - name: Upload binary
         uses: actions/upload-artifact@v4
