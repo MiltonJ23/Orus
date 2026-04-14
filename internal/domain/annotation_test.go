@@ -7,44 +7,45 @@ import (
 	"github.com/MiltonJ23/Orus/internal/domain"
 )
 
-func TestNewBookMark(t *testing.T) {
-	// i guess i have to create a new bookmark first , let's go
-	_, bookmarkCreationError := domain.NewBookMark("3ubiosdfo24", domain.AnnotationBookmark, 30)
-	if bookmarkCreationError != nil {
-		t.Fatalf("expected no errors, got %v", bookmarkCreationError)
+func TestNewAnnotation(t *testing.T) {
+	_, err := domain.NewAnnotation("3ubiosdfo24", domain.AnnotationBookmark, 30)
+	if err != nil {
+		t.Fatalf("expected no errors, got %v", err)
 	}
 
-	// now let's test the case of improper bookID
-	_, bookmarkCreationWrongBookId := domain.NewBookMark("", domain.AnnotationBookmark, 30)
-	if !errors.Is(bookmarkCreationWrongBookId, domain.ErrInvalidBookId) {
-		t.Errorf("expected error to be ErrInvalidBookId, instead got %v", bookmarkCreationWrongBookId)
+	_, errBookID := domain.NewAnnotation("", domain.AnnotationBookmark, 30)
+	if !errors.Is(errBookID, domain.ErrInvalidBookId) {
+		t.Errorf("expected error to be ErrInvalidBookId, instead got %v", errBookID)
 	}
 
-	// now let's test the case of the improper page Number
-	_, pageNumberErr := domain.NewBookMark("3ubiosdfo24", domain.AnnotationBookmark, -2)
-	if !errors.Is(pageNumberErr, domain.ErrInvalidPageNumber) {
-		t.Errorf("expected error to be ErrInvalidPageNumber, instead got %v", pageNumberErr)
+	_, errPage := domain.NewAnnotation("3ubiosdfo24", domain.AnnotationBookmark, -2)
+	if !errors.Is(errPage, domain.ErrInvalidPageNumber) {
+		t.Errorf("expected error to be ErrInvalidPageNumber, instead got %v", errPage)
 	}
-
 }
 
-func TestBookMarkType(t *testing.T) {
-	// we are checking if the book got the correct value for the bookmark type
-	bookmark, bookmarkCreationError := domain.NewBookMark("kln934nalj4fs", domain.AnnotationBookmark, 30)
-	if bookmarkCreationError != nil {
-		t.Fatalf("expected no errors, got %v", bookmarkCreationError)
+func TestAnnotationType(t *testing.T) {
+	bookmark, err := domain.NewAnnotation("kln934nalj4fs", domain.AnnotationBookmark, 30)
+	if err != nil {
+		t.Fatalf("expected no errors, got %v", err)
 	}
-
 	if bookmark.AnnotationType != "bookmark" {
-		t.Fatalf("bookmark.Type should  be 'bookmark', instead got %v", bookmark.AnnotationType)
-	}
-	// now let's cover for the other type of bookmark
-	bookmark2, bookmarkCreationError2 := domain.NewBookMark("kln934nalj4fs", domain.AnnotationHighlight, 30)
-	if bookmarkCreationError2 != nil {
-		t.Fatalf("expected no errors, got %v", bookmarkCreationError2)
+		t.Fatalf("expected type 'bookmark', got %v", bookmark.AnnotationType)
 	}
 
-	if bookmark2.AnnotationType != "highlight" {
-		t.Fatalf("bookmark.Type should be 'hightlight', instead got %v", bookmark2.AnnotationType)
+	highlight, err := domain.NewAnnotation("kln934nalj4fs", domain.AnnotationHighlight, 30)
+	if err != nil {
+		t.Fatalf("expected no errors, got %v", err)
+	}
+	if highlight.AnnotationType != "highlight" {
+		t.Fatalf("expected type 'highlight', got %v", highlight.AnnotationType)
+	}
+}
+
+func TestAnnotationIDUniqueness(t *testing.T) {
+	a1, _ := domain.NewAnnotation("book1", domain.AnnotationBookmark, 1)
+	a2, _ := domain.NewAnnotation("book1", domain.AnnotationBookmark, 1)
+	if a1.ID == a2.ID {
+		t.Fatal("two annotations created with the same ID")
 	}
 }

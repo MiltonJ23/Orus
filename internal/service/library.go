@@ -10,13 +10,16 @@ import (
 	"github.com/MiltonJ23/Orus/internal/port"
 )
 
+// ErrBookAlreadyExists indicates an attempt to import a book that already exists.
 var ErrBookAlreadyExists = errors.New("book already exists")
 
+// LibraryService handles book import and library management.
 type LibraryService struct {
 	repo      port.BookRepository
 	extractor port.MetadataExtractor
 }
 
+// NewLibraryService creates a new LibraryService with the given dependencies.
 func NewLibraryService(repo port.BookRepository, extractor port.MetadataExtractor) *LibraryService {
 	return &LibraryService{repo, extractor}
 }

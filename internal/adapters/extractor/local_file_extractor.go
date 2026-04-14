@@ -23,12 +23,15 @@ const linesPerChunk = 35
 
 var _ port.ContentReader = (*LocalFileExtractor)(nil)
 
+// LocalFileExtractor extracts metadata and text content from PDF and EPUB files.
 type LocalFileExtractor struct{}
 
+// NewLocalFileExtractor creates a new LocalFileExtractor.
 func NewLocalFileExtractor() *LocalFileExtractor {
 	return &LocalFileExtractor{}
 }
 
+// ExtractInfo returns metadata (title, author, pages, format) for the given file.
 func (l *LocalFileExtractor) ExtractInfo(ctx context.Context, filePath string) (*domain.BookMetadata, error) {
 	ext := strings.ToLower(filepath.Ext(filePath))
 	switch ext {
@@ -46,7 +49,7 @@ func (l *LocalFileExtractor) ReadBookText(ctx context.Context, filePath string) 
 	ext := strings.ToLower(filepath.Ext(filePath))
 	switch ext {
 	case ".pdf":
-		return l.readPDFText(filePath)
+		return l.readPDFText(ctx, filePath)
 	case ".epub":
 		return l.readEPUBText(filePath)
 	default:
@@ -54,7 +57,7 @@ func (l *LocalFileExtractor) ReadBookText(ctx context.Context, filePath string) 
 	}
 }
 
-func (l *LocalFileExtractor) readPDFText(filePath string) ([]string, error) {
+func (l *LocalFileExtractor) readPDFText(ctx context.Context, filePath string) ([]string, error) {
 	file, reader, err := pdf.Open(filePath)
 	if err != nil {
 		return nil, fmt.Errorf("impossible d'ouvrir le PDF : %w", err)
@@ -65,7 +68,8 @@ func (l *LocalFileExtractor) readPDFText(filePath string) ([]string, error) {
 
 	for i := 1; i <= reader.NumPage(); i++ {
 		select {
-		// TODO: ctx done check here
+		case <-ctx.Done():
+			return nil, ctx.Err()
 		default:
 		}
 		page := reader.Page(i)

@@ -87,8 +87,15 @@ func TestTrackerService_OpenBook(t *testing.T) {
 }
 
 func TestTrackerService_UpdateProgress(t *testing.T) {
-	svc := service.NewTrackerService(nil, nil)
-	session := &domain.ReadingSession{TotalPages: 100, CurrentPage: 10}
+	bRepo := &mockTrackerBookRepo{}
+	sRepo := &mockSessionRepo{}
+	svc := service.NewTrackerService(bRepo, sRepo)
+	session := &domain.ReadingSession{
+		SessionID:   "test-session",
+		BookID:      "book-123",
+		TotalPages:  100,
+		CurrentPage: 10,
+	}
 
 	err := svc.UpdateProgress(context.Background(), 20, session)
 	if err != nil {

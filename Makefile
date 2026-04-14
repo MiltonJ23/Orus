@@ -30,6 +30,13 @@ test:
 fmt:
 	@go fmt ./...
 
+# Run go vet
+vet:
+	@go vet ./...
+
+# Run golangci-lint (install with: go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest)
+lint:
+	@golangci-lint run ./...
 
 test-with-coverage:
 	@go test -coverprofile=coverage.out ./...
@@ -37,3 +44,5 @@ test-with-coverage:
 
 consult-coverage:
 	@go tool cover -func=coverage.out
+
+.PHONY: build run clean test fmt vet lint test-with-coverage consult-coverage

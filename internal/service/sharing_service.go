@@ -15,6 +15,7 @@ import (
 	"github.com/MiltonJ23/Orus/internal/port"
 )
 
+// ShareFormat represents an export file format.
 type ShareFormat string
 
 const (
@@ -23,11 +24,13 @@ const (
 	ShareFormatText     ShareFormat = "txt"
 )
 
+// SharingService exports library data to files.
 type SharingService struct {
 	bookRepo  port.BookRepository
 	sheetRepo port.ReadingSheetRepository
 }
 
+// NewSharingService creates a new SharingService with the given dependencies.
 func NewSharingService(bookRepo port.BookRepository, sheetRepo port.ReadingSheetRepository) *SharingService {
 	return &SharingService{bookRepo: bookRepo, sheetRepo: sheetRepo}
 }
@@ -63,6 +66,7 @@ func PickExportDirectory() string {
 	return dir
 }
 
+// ExportLibrary exports the full library to a file in the given format.
 func (s *SharingService) ExportLibrary(ctx context.Context, format ShareFormat, outputDir string) (string, error) {
 	books, err := s.bookRepo.ListAll(ctx)
 	if err != nil {
@@ -105,12 +109,13 @@ func (s *SharingService) ExportLibrary(ctx context.Context, format ShareFormat, 
 	}
 	fileName := fmt.Sprintf("orus_bibliotheque_%s.%s", time.Now().Format("20060102"), ext)
 	filePath := filepath.Join(outputDir, fileName)
-	if err := os.WriteFile(filePath, []byte(sb.String()), 0644); err != nil {
+	if err := os.WriteFile(filePath, []byte(sb.String()), 0600); err != nil {
 		return "", fmt.Errorf("failed to write: %w", err)
 	}
 	return filePath, nil
 }
 
+// ExportBookInfo exports a single book's info to a file in the given format.
 func (s *SharingService) ExportBookInfo(ctx context.Context, bookID string, format ShareFormat, outputDir string) (string, error) {
 	book, err := s.bookRepo.GetByID(ctx, bookID)
 	if err != nil {
@@ -134,9 +139,10 @@ func (s *SharingService) ExportBookInfo(ctx context.Context, bookID string, form
 		return "", err
 	}
 	filePath := filepath.Join(outputDir, fmt.Sprintf("orus_%s_%s.%s", sanitizeFileName(book.Title), time.Now().Format("20060102"), ext))
-	return filePath, os.WriteFile(filePath, []byte(content), 0644)
+	return filePath, os.WriteFile(filePath, []byte(content), 0600)
 }
 
+// ExportReadingSheet exports a reading sheet to a file in the given format.
 func (s *SharingService) ExportReadingSheet(ctx context.Context, sheetID string, format ShareFormat, outputDir string) (string, error) {
 	sheet, err := s.sheetRepo.GetSheetByID(ctx, sheetID)
 	if err != nil {
@@ -157,7 +163,7 @@ func (s *SharingService) ExportReadingSheet(ctx context.Context, sheetID string,
 		ext = "txt"
 	}
 	filePath := filepath.Join(outputDir, fmt.Sprintf("fiche_%s_%s.%s", sanitizeFileName(sheet.BookTitle), time.Now().Format("20060102"), ext))
-	return filePath, os.WriteFile(filePath, []byte(content), 0644)
+	return filePath, os.WriteFile(filePath, []byte(content), 0600)
 }
 
 func (s *SharingService) buildBookJSON(book *domain.Book, sheet *domain.ReadingSheet) (string, error) {

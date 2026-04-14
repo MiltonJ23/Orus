@@ -6,7 +6,7 @@ import (
 	"github.com/MiltonJ23/Orus/internal/domain"
 )
 
-// ReadingSheetRepository définit le contrat de persistance pour les fiches de lecture
+// ReadingSheetRepository defines the contract for reading sheet persistence.
 type ReadingSheetRepository interface {
 	SaveSheet(ctx context.Context, sheet *domain.ReadingSheet) error
 	GetSheetByID(ctx context.Context, id string) (*domain.ReadingSheet, error)
@@ -16,7 +16,7 @@ type ReadingSheetRepository interface {
 	DeleteSheet(ctx context.Context, id string) error
 }
 
-// ReminderRepository définit le contrat de persistance pour les rappels
+// ReminderRepository defines the contract for reminder persistence.
 type ReminderRepository interface {
 	SaveReminder(ctx context.Context, reminder *domain.Reminder) error
 	GetReminderByID(ctx context.Context, id string) (*domain.Reminder, error)
@@ -26,7 +26,7 @@ type ReminderRepository interface {
 	ListEnabledReminders(ctx context.Context) ([]*domain.Reminder, error)
 }
 
-// Notifier est le port de sortie pour envoyer des notifications système
+// Notifier defines the contract for sending system notifications.
 type Notifier interface {
 	Notify(title, message string) error
 }

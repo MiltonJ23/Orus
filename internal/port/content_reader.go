@@ -2,9 +2,9 @@ package port
 
 import "context"
 
-// ContentReader est le port pour extraire le contenu textuel lisible d'un fichier
+// ContentReader defines the contract for extracting readable text from book files.
 type ContentReader interface {
-	// ReadBookText extrait tout le texte d'un livre et le découpe en chunks de taille raisonnable.
-	// Chaque chunk représente une "page" dans le lecteur.
+	// ReadBookText extracts all text from a book and splits it into
+	// reasonably sized chunks. Each chunk represents a "page" in the reader.
 	ReadBookText(ctx context.Context, filePath string) ([]string, error)
 }
