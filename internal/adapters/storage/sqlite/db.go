@@ -8,10 +8,13 @@ import (
 	_ "modernc.org/sqlite"
 )
 
+// Storage provides SQLite-backed persistence for all repository interfaces.
 type Storage struct {
 	db *sql.DB
 }
 
+// NewStorage opens a SQLite database at dbPath, enables foreign keys, and
+// creates all required tables. The caller must call Close() when finished.
 func NewStorage(dbPath string) (*Storage, error) {
 	if dbPath == "" {
 		return nil, errors.New("dbPath cannot be empty")
@@ -96,6 +99,7 @@ func createTables(db *sql.DB) error {
 	return queryExecutionError
 }
 
+// Close closes the underlying database connection.
 func (s *Storage) Close() error {
 	if s == nil || s.db == nil {
 		return nil

@@ -8,7 +8,10 @@ import (
 	"github.com/google/uuid"
 )
 
-// ReadingSession tracks the user interaction with a book
+// ErrInvalidSessionPage indicates an invalid starting page for a session.
+var ErrInvalidSessionPage = errors.New("invalid session page number")
+
+// ReadingSession tracks the user's reading position within a book.
 type ReadingSession struct {
 	SessionID       string
 	BookID          string    `json:"book_id"`
@@ -17,13 +20,13 @@ type ReadingSession struct {
 	LastReadingTime time.Time `json:"last_reading_time"`
 }
 
+// NewSession creates a new ReadingSession with validated fields.
 func NewSession(bookId string, totalPages, currentPages int, lastReadingTime time.Time) (*ReadingSession, error) {
-	// we first of all check if the bookId is not empty
 	if bookId == "" {
-		return nil, ErrInvalidBookTitle
+		return nil, ErrInvalidBookId
 	}
 	if currentPages < 1 {
-		return nil, errors.New("invalid session page number")
+		return nil, ErrInvalidSessionPage
 	}
 	var r ReadingSession
 	r.SessionID = uuid.New().String()
@@ -35,7 +38,7 @@ func NewSession(bookId string, totalPages, currentPages int, lastReadingTime tim
 	return &r, nil
 }
 
-// CalculateCompletion calculate the rate of completion in percentage (0.0 % to 100 % )
+// CalculateCompletion returns reading progress as a percentage (0.0 to 100.0).
 func (r *ReadingSession) CalculateCompletion() float64 {
 	if r.TotalPages == 0 {
 		return 0
@@ -44,12 +47,12 @@ func (r *ReadingSession) CalculateCompletion() float64 {
 	return math.Round(progress*100) / 100
 }
 
-// IsBookComplete assess if the book is complete
+// IsBookComplete returns true when the reader has reached the last page.
 func (r *ReadingSession) IsBookComplete() bool {
 	return r.CurrentPage >= r.TotalPages
 }
 
-// UpdatePosition moves the reader to a new page
+// UpdatePosition moves the reader to a new page, clamping to valid bounds.
 func (r *ReadingSession) UpdatePosition(page int) {
 	if page < 1 {
 		r.CurrentPage = 1

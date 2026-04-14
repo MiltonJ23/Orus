@@ -9,11 +9,13 @@ import (
 	"github.com/MiltonJ23/Orus/internal/port"
 )
 
+// TrackerService manages reading session tracking and progress.
 type TrackerService struct {
 	repo    port.BookRepository
 	session port.SessionRepository
 }
 
+// NewTrackerService creates a new TrackerService with the given dependencies.
 func NewTrackerService(repository port.BookRepository, session port.SessionRepository) *TrackerService {
 	return &TrackerService{
 		repo:    repository,
@@ -28,7 +30,10 @@ func (t *TrackerService) OpenBook(ctx context.Context, bookId string) (*domain.R
 		return nil, fmt.Errorf("OpenBook: retrieve book: %w", err)
 	}
 
-	session, _ := t.session.GetLastReadingSession(ctx, bookId)
+	session, err := t.session.GetLastReadingSession(ctx, bookId)
+	if err != nil {
+		return nil, fmt.Errorf("OpenBook: retrieve last session: %w", err)
+	}
 
 	currentPage := 1
 	if session != nil && session.CurrentPage > 0 {

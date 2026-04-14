@@ -3,8 +3,11 @@ package domain
 import (
 	"errors"
 	"time"
+
+	"github.com/google/uuid"
 )
 
+// AnnotationType distinguishes between bookmark and highlight annotations.
 type AnnotationType string
 
 const (
@@ -12,9 +15,11 @@ const (
 	AnnotationHighlight AnnotationType = "highlight"
 )
 
+// ErrInvalidPageNumber indicates an invalid page number (must be >= 1).
 var (
 	ErrInvalidPageNumber = errors.New("invalid annotation page number")
-	ErrInvalidBookId     = errors.New("invalid book id")
+	// ErrInvalidBookId indicates an empty book ID was provided.
+	ErrInvalidBookId = errors.New("invalid book id")
 )
 
 // Annotation represents a user interaction with a specific part of the book
@@ -26,20 +31,19 @@ type Annotation struct {
 	CreatedAt      time.Time      `json:"created_at"`
 }
 
-// NewBookMark create a new bookmark for a specific page
-func NewBookMark(bookID string, format AnnotationType, pageNo int) (*Annotation, error) {
-	if pageNo < 1 { // we check if the method receives an invalid page number , we reject the creation of the bookmark
+// NewAnnotation creates a new annotation (bookmark or highlight) for a specific page.
+func NewAnnotation(bookID string, annotationType AnnotationType, pageNo int) (*Annotation, error) {
+	if pageNo < 1 {
 		return nil, ErrInvalidPageNumber
 	}
-	// now let's check if the bookID is not empty
 	if bookID == "" {
 		return nil, ErrInvalidBookId
 	}
 
 	return &Annotation{
-		ID:             "note-" + time.Now().Format("20060102150405"),
+		ID:             uuid.New().String(),
 		BookID:         bookID,
-		AnnotationType: format,
+		AnnotationType: annotationType,
 		PageNo:         pageNo,
 		CreatedAt:      time.Now(),
 	}, nil

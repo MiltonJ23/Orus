@@ -10,8 +10,10 @@ import (
 	"github.com/MiltonJ23/Orus/internal/port"
 )
 
+// ReminderCallback is a function called when a reminder fires.
 type ReminderCallback func(reminder *domain.Reminder)
 
+// ReminderService manages reading reminders with a background scheduler.
 type ReminderService struct {
 	repo     port.ReminderRepository
 	notifier port.Notifier
@@ -19,12 +21,15 @@ type ReminderService struct {
 	stop     chan struct{}
 }
 
+// NewReminderService creates a new ReminderService with the given dependencies.
 func NewReminderService(repo port.ReminderRepository, notifier port.Notifier) *ReminderService {
 	return &ReminderService{repo: repo, notifier: notifier, stop: make(chan struct{})}
 }
 
+// SetCallback registers a function to be called when a reminder fires.
 func (s *ReminderService) SetCallback(cb ReminderCallback) { s.onRing = cb }
 
+// AddReminder creates and persists a new reading reminder.
 func (s *ReminderService) AddReminder(ctx context.Context, bookID, bookTitle, label string, hour, minute int, freq domain.ReminderFrequency) (*domain.Reminder, error) {
 	r, err := domain.NewReminder(bookID, bookTitle, label, hour, minute, freq)
 	if err != nil {
@@ -36,10 +41,12 @@ func (s *ReminderService) AddReminder(ctx context.Context, bookID, bookTitle, la
 	return r, nil
 }
 
+// ListReminders returns all reminders.
 func (s *ReminderService) ListReminders(ctx context.Context) ([]*domain.Reminder, error) {
 	return s.repo.ListAllReminders(ctx)
 }
 
+// ToggleReminder enables or disables a reminder by ID.
 func (s *ReminderService) ToggleReminder(ctx context.Context, id string) error {
 	r, err := s.repo.GetReminderByID(ctx, id)
 	if err != nil {
@@ -69,10 +76,13 @@ func (s *ReminderService) DismissReminder(ctx context.Context, id string) error 
 	return nil
 }
 
+// DeleteReminder removes a reminder by ID.
 func (s *ReminderService) DeleteReminder(ctx context.Context, id string) error {
 	return s.repo.DeleteReminder(ctx, id)
 }
 
+// StartScheduler runs the reminder polling loop. It checks for due reminders
+// every 30 seconds and sends notifications. Call Stop() to terminate.
 func (s *ReminderService) StartScheduler() {
 	log.Println("[ReminderService] Planificateur démarré")
 	ticker := time.NewTicker(30 * time.Second)
@@ -88,6 +98,7 @@ func (s *ReminderService) StartScheduler() {
 	}
 }
 
+// Stop terminates the scheduler goroutine.
 func (s *ReminderService) Stop() { close(s.stop) }
 
 func (s *ReminderService) checkDueReminders(now time.Time) {

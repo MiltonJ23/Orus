@@ -8,11 +8,13 @@ import (
 	"github.com/MiltonJ23/Orus/internal/port"
 )
 
+// ReadingSheetService handles CRUD operations for reading sheets.
 type ReadingSheetService struct {
 	sheetRepo port.ReadingSheetRepository
 	bookRepo  port.BookRepository
 }
 
+// NewReadingSheetService creates a new ReadingSheetService with the given dependencies.
 func NewReadingSheetService(sheetRepo port.ReadingSheetRepository, bookRepo port.BookRepository) *ReadingSheetService {
 	return &ReadingSheetService{sheetRepo: sheetRepo, bookRepo: bookRepo}
 }

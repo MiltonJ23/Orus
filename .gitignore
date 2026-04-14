@@ -1,0 +1,23 @@
+# Build artifacts
+bin/
+dist/
+
+# Database
+*.db
+
+# Coverage reports
+coverage.out
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Go
+vendor/

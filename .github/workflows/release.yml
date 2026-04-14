@@ -1,0 +1,116 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Build and Release
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Install Linux dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwayland-dev libxkbcommon-dev libgles2-mesa-dev
+
+      - name: Download modules
+        run: go mod download
+
+      - name: Run tests
+        run: go test -race -count=1 -timeout 120s ./internal/...
+
+      - name: Extract version
+        id: version
+        run: echo "tag=${GITHUB_REF#refs/tags/}" >> "$GITHUB_OUTPUT"
+
+      - name: Build binaries
+        run: |
+          mkdir -p dist
+
+          # Linux amd64
+          GOOS=linux GOARCH=amd64 CGO_ENABLED=0 \
+            go build -ldflags="-s -w -X main.version=${{ steps.version.outputs.tag }}" \
+            -o dist/orus-linux-amd64 ./cmd/orus/
+
+          # macOS amd64
+          GOOS=darwin GOARCH=amd64 CGO_ENABLED=0 \
+            go build -ldflags="-s -w -X main.version=${{ steps.version.outputs.tag }}" \
+            -o dist/orus-darwin-amd64 ./cmd/orus/
+
+          # macOS arm64
+          GOOS=darwin GOARCH=arm64 CGO_ENABLED=0 \
+            go build -ldflags="-s -w -X main.version=${{ steps.version.outputs.tag }}" \
+            -o dist/orus-darwin-arm64 ./cmd/orus/
+
+          # Windows amd64
+          GOOS=windows GOARCH=amd64 CGO_ENABLED=0 \
+            go build -ldflags="-s -w -X main.version=${{ steps.version.outputs.tag }}" \
+            -o dist/orus-windows-amd64.exe ./cmd/orus/
+
+      - name: Create checksums
+        working-directory: dist
+        run: sha256sum * > checksums.txt
+
+      - name: Generate changelog
+        id: changelog
+        run: |
+          # Get previous tag
+          prev_tag=$(git tag --sort=-version:refname | head -2 | tail -1)
+          if [ -z "$prev_tag" ] || [ "$prev_tag" = "${{ steps.version.outputs.tag }}" ]; then
+            echo "body=Initial release" >> "$GITHUB_OUTPUT"
+          else
+            changelog=$(git log --pretty=format:"- %s (%h)" "$prev_tag".."${{ steps.version.outputs.tag }}" 2>/dev/null || echo "Initial release")
+            # Use a delimiter for multiline output
+            {
+              echo "body<<CHANGELOG_EOF"
+              echo "$changelog"
+              echo "CHANGELOG_EOF"
+            } >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.version.outputs.tag }}
+          name: Orus ${{ steps.version.outputs.tag }}
+          body: |
+            ## Orus ${{ steps.version.outputs.tag }}
+
+            ### Changes
+            ${{ steps.changelog.outputs.body }}
+
+            ### Downloads
+
+            | Platform | Architecture | Binary |
+            |----------|-------------|--------|
+            | Linux | x86_64 | `orus-linux-amd64` |
+            | macOS | x86_64 | `orus-darwin-amd64` |
+            | macOS | ARM64 | `orus-darwin-arm64` |
+            | Windows | x86_64 | `orus-windows-amd64.exe` |
+
+            ### Checksums
+            See `checksums.txt` for SHA-256 verification.
+          files: |
+            dist/orus-linux-amd64
+            dist/orus-darwin-amd64
+            dist/orus-darwin-arm64
+            dist/orus-windows-amd64.exe
+            dist/checksums.txt
+          draft: false
+          prerelease: false
