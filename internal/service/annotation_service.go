@@ -42,7 +42,7 @@ func (a *AnnotationService) AddAnnotation(ctx context.Context, bookID string, an
 		return nil, fmt.Errorf("save annotation: %w", err)
 	}
 
-	log.Printf("[Annotation] Ajoutee : type=%s page=%d livre=%s", annotationType, pageNo, bookID)
+	log.Printf("[Annotation] Ajoutée : type=%s page=%d livre=%s", annotationType, pageNo, bookID)
 	return annot, nil
 }
 
@@ -81,7 +81,7 @@ func (a *AnnotationService) DeleteAnnotation(ctx context.Context, annotationID s
 	if err := a.annotRepo.DeleteAnnotation(ctx, annotationID); err != nil {
 		return fmt.Errorf("delete annotation: %w", err)
 	}
-	log.Printf("[Annotation] Supprimee : id=%s", annotationID)
+	log.Printf("[Annotation] Supprimée : id=%s", annotationID)
 	return nil
 }
 
