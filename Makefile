@@ -22,24 +22,24 @@ clean:
 	@rm -rf bin/$(BINARY_NAME)
 	@echo "Clean completed."
 
-# Run tests
+# Run tests (internal only — cmd/orus requires native UI libraries)
 test:
-	@go test ./...
+	@go test -race -count=1 -timeout 120s ./internal/...
 
 # Format code (Go's version of linting tasks)
 fmt:
 	@go fmt ./...
 
-# Run go vet
+# Run go vet (internal only — cmd/orus requires native UI libraries)
 vet:
-	@go vet ./...
+	@go vet ./internal/...
 
 # Run golangci-lint (install with: go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest)
 lint:
-	@golangci-lint run ./...
+	@golangci-lint run ./internal/...
 
 test-with-coverage:
-	@go test -coverprofile=coverage.out ./...
+	@go test -coverprofile=coverage.out -covermode=atomic ./internal/...
 
 
 consult-coverage:
