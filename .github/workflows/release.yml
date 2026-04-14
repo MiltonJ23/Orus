@@ -26,11 +26,6 @@ jobs:
             goarch: amd64
             ext: ""
             cgo: "1"
-          - os: macos-13
-            goos: darwin
-            goarch: amd64
-            ext: ""
-            cgo: "1"
           - os: macos-latest
             goos: darwin
             goarch: arm64
